@@ -41,7 +41,9 @@ Python 库接口：`upscale(img, scale, sharpness=None)`，输入输出均为 fl
 全屏滑块对比页：左半为原图（浏览器双线性放大到输出尺寸），右半为 FSR1 结果，
 拖动分隔线逐像素对比。内置 `sample/` 示例库（Genshin Impact、Tomb Raider 两套
 1080p 原图 + 2K/4K 预跑结果），倍率 2x/4x 即时切换；上传自己的图片后替换为
-API 实时计算（输入最大边 512px）。
+API 实时计算（输入最大边 512px）。滚轮可放大细节，缩放后拖拽平移。
+
+![FSR1 演示截图](asset/fsr1-show.png)
 
 ```bash
 uv run python serve.py        # 本地：http://127.0.0.1:8000
