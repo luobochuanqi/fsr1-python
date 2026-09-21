@@ -172,10 +172,7 @@
   <button id="galleryToggle">示例</button>
   <div class="group">
     <span class="group-label">倍率</span>
-    <div class="seg" id="scaleSeg">
-      <button data-scale="2" class="on">2x</button>
-      <button data-scale="4">4x</button>
-    </div>
+    <span class="val" id="scaleV">2x</span>
   </div>
   <div class="group">
     <span class="group-label">锐化</span>
@@ -193,7 +190,7 @@ const compare = $("compare"), divider = $("divider");
 const stage = $("stage");
 let busy = false, raf = 0;
 // 当前展示状态：mode = "sample"（静态图对）| "upload"（API 实时计算）。
-let mode = "sample", curSample = "genshin", curScale = "2";
+let mode = "sample", curSample = "genshin";
 let bytes = null, name = "";
 
 const SAMPLES = [
@@ -313,24 +310,18 @@ function setPair(beforeUrl, afterUrl, text) {
   afterImg.src = afterUrl;
 }
 
-// 加载内置示例的某一倍率图对；origin 一律为 before，超分图为 after。
-function showSample(sampleId, scale) {
-  mode = "sample"; curSample = sampleId; curScale = scale;
+// 加载内置示例的图对；origin 一律为 before，2x（4K）超分图为 after。
+function showSample(sampleId) {
+  mode = "sample"; curSample = sampleId;
   const s = SAMPLES.find((x) => x.id === sampleId);
-  const scaleSeg = $("scaleSeg");
-  scaleSeg.querySelectorAll("button").forEach((b) =>
-    b.classList.toggle("on", b.dataset.scale === scale));
   const before = `/sample/${sampleId}/origin.jpg`;
-  const after = `/sample/${sampleId}/${scale}x.jpg`;
+  const after = `/sample/${sampleId}/2x.jpg`;
   setPair(before, after,
-    `${s.label} · 1920x1080 → ${scale === "2" ? "3840x2160" : "7680x4320"} · FSR1 ${scale}x`);
-  // 预取另一倍率，切档即时（图片已缓存于浏览器）。
-  const other = scale === "2" ? "4" : "2";
-  const pre = new Image();
-  pre.src = `/sample/${sampleId}/${other}x.jpg`;
+    `${s.label} · 1920x1080 → 3840x2160 · FSR1 2x`);
 }
-// 上传路径：按当前倍率档 POST，返回超分图。
-async function runUpload(scale) {
+// 上传路径：按 2x POST，返回 4K 超分图。
+async function runUpload() {
+  const scale = "2";
   if (!bytes || busy) return;
   busy = true;
   setStatus(`超分计算中 ${scale}x · 约 1-2 秒`, true);
@@ -363,7 +354,7 @@ for (const s of SAMPLES) {
   b.innerHTML = `<img src="/sample/${s.id}/origin.jpg" alt="${s.label}"><span>${s.label}</span>`;
   b.addEventListener("click", () => {
     gallery.classList.remove("open");
-    showSample(s.id, curScale);
+    showSample(s.id);
     markThumb();
   });
   gallery.appendChild(b);
@@ -374,19 +365,11 @@ function markThumb() {
 }
 markThumb();
 
-// 倍率分段：示例直接切静态图；上传走重新计算。
-$("scaleSeg").addEventListener("click", (e) => {
-  const b = e.target.closest("button");
-  if (!b || busy) return;
-  if (mode === "sample") showSample(curSample, b.dataset.scale);
-  else runUpload(b.dataset.scale);
-});
-
 // 锐化滑杆：仅上传模式生效（示例是固定 0.2 的预跑结果）。
 $("sharp").addEventListener("input", (e) => {
   $("sharpV").textContent = parseFloat(e.target.value).toFixed(2);
 });
-$("sharp").addEventListener("change", () => { if (mode === "upload") runUpload(curScale); });
+$("sharp").addEventListener("change", () => { if (mode === "upload") runUpload(); });
 
 // 上传：任何上传进入 upload 模式；超限（>512px 边）会被 API 拒绝并提示。
 $("uploadBtn").addEventListener("click", () => $("fileInput").click());
@@ -396,7 +379,7 @@ $("fileInput").addEventListener("change", () => {
   mode = "upload"; bytes = null; name = f.name;
   setStatus("读取文件中", true);
   const reader = new FileReader();
-  reader.onload = () => { bytes = reader.result; runUpload($("scaleSeg").querySelector(".on").dataset.scale); };
+  reader.onload = () => { bytes = reader.result; runUpload(); };
   reader.readAsArrayBuffer(f);
 });
 function setX(clientX) {
@@ -404,8 +387,7 @@ function setX(clientX) {
   const x = Math.min(Math.max((clientX - r.left) / r.width, 0), 1) * 100;
   compare.style.setProperty("--x", x + "%");
 }
-
-showSample("genshin", "2");
+showSample("genshin");
 </script>
 </body>
 </html>
