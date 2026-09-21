@@ -36,6 +36,24 @@ uv run python fsr1.py --selftest
 Python 库接口：`upscale(img, scale, sharpness=None)`，输入输出均为 float32 RGB，
 取值 [0,1]；`sharpness=None` 表示仅执行 EASU。
 
+## Web 演示
+
+滑块对比页：左半为原图（浏览器双线性放大到输出尺寸），右半为 FSR1 结果，可拖动
+分隔线逐像素对比。
+
+```bash
+uv run python serve.py        # 本地：http://127.0.0.1:8000
+```
+
+部署到 Vercel（本目录即项目根，`api/upscale.py` 直接复用 `fsr1.py`）：
+
+```bash
+npx vercel deploy            # 或将本目录关联为 Vercel 项目
+```
+
+约束：输入最大边 512px、倍率 1.25-2.0、锐化 0-2.0（服务端夹取）。NumPy 路径在
+512px 时约 1.2s，函数时限 60s（Hobby 计划上限），余量充足。
+
 ## 依赖
 
 Python >= 3.12，uv 管理。运行仅依赖 NumPy，命令行另需 Pillow。

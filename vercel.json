@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/upscale.py": {
+      "maxDuration": 60,
+      "excludeFiles": "{serve.py,input/**,output/**,assets/**,__pycache__/**,.ruff_cache/**,*.jpg,*.png}"
+    }
+  }
+}

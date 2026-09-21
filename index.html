@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FSR1 超分演示</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; flex-direction: column;
+    align-items: center; gap: 16px; padding: 24px;
+    font: 14px/1.5 system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #111318; color: #e6e6e6;
+  }
+  h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  h1 small { font-weight: 400; color: #8a8f98; margin-left: 8px; }
+  #drop {
+    width: min(720px, 100%); border: 1px dashed #4a4f58; border-radius: 8px;
+    padding: 28px; text-align: center; color: #8a8f98; cursor: pointer;
+    transition: border-color .15s, color .15s;
+  }
+  #drop:hover, #drop.over { border-color: #7aa2f7; color: #7aa2f7; }
+  #drop input { display: none; }
+  #controls {
+    width: min(720px, 100%); display: flex; flex-wrap: wrap; gap: 16px;
+    align-items: center; justify-content: space-between; visibility: hidden;
+  }
+  label { display: flex; align-items: center; gap: 8px; }
+  input[type="range"] { accent-color: #7aa2f7; }
+  #compare {
+    position: relative; width: min(720px, 100%); user-select: none;
+    touch-action: none; border-radius: 8px; overflow: hidden; display: none;
+    background: #000; line-height: 0;
+  }
+  #compare img { width: 100%; display: block; pointer-events: none; }
+  #after { position: absolute; inset: 0; clip-path: inset(0 0 0 var(--x, 50%)); }
+  #divider {
+    position: absolute; top: 0; bottom: 0; left: var(--x, 50%); width: 2px;
+    background: #fff; cursor: ew-resize; touch-action: none;
+  }
+  #divider::after {
+    content: "↔"; position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    background: #fff; color: #111; border-radius: 50%;
+    width: 28px; height: 28px; display: grid; place-items: center;
+    font-size: 14px; font-weight: 700;
+  }
+  .tag {
+    position: absolute; top: 8px; padding: 2px 8px; border-radius: 4px;
+    background: rgba(17, 19, 24, .8); font-size: 12px; line-height: 1.6;
+  }
+  #tagL { left: 8px; } #tagR { right: 8px; }
+  #status { color: #8a8f98; min-height: 1.5em; }
+  #status.error { color: #e06c75; }
+</style>
+</head>
+<body>
+<h1>FSR1 超分演示<small>EASU + RCAS · NumPy 逐位复刻 AMD 参考实现</small></h1>
+
+<div id="drop">拖入或点击选择图片（最大边 512px）
+  <input type="file" accept="image/png,image/jpeg"></div>
+
+<div id="controls">
+  <label>倍率 <input type="range" id="scale" min="1.25" max="2" step="0.25" value="2">
+    <span id="scaleV">2.0x</span></label>
+  <label>锐化 <input type="range" id="sharp" min="0" max="2" step="0.25" value="0.25">
+    <span id="sharpV">0.25</span></label>
+</div>
+
+<div id="status">等待输入。</div>
+
+<div id="compare">
+  <img id="before" alt="原图">
+  <div id="after"><img id="afterImg" alt="超分结果"></div>
+  <span class="tag" id="tagL">原图（浏览器双线性放大到输出尺寸）</span>
+  <span class="tag" id="tagR">FSR1</span>
+  <div id="divider"></div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const drop = $("drop"), fileInput = drop.querySelector("input");
+let bytes = null, name = "", busy = false, raf = 0;
+
+drop.addEventListener("click", () => fileInput.click());
+drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", (e) => {
+  e.preventDefault(); drop.classList.remove("over");
+  if (e.dataTransfer.files[0]) load(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener("change", () => { if (fileInput.files[0]) load(fileInput.files[0]); });
+
+function load(file) {
+  bytes = null;
+  const reader = new FileReader();
+  reader.onload = () => { bytes = reader.result; name = file.name; run(); };
+  reader.readAsArrayBuffer(file);
+}
+
+for (const [id, fmt] of [["scale", (v) => v.toFixed(2) + "x"], ["sharp", (v) => v.toFixed(2)]]) {
+  $(id).addEventListener("input", (e) => { $(id + "V").textContent = fmt(parseFloat(e.target.value)); });
+  $(id).addEventListener("change", () => { if (bytes) run(); });
+}
+
+async function run() {
+  if (!bytes || busy) return;
+  busy = true;
+  const s = $("scale").value, k = $("sharp").value;
+  $("status").className = ""; $("status").textContent = "超分计算中（约 1-2s）…";
+  try {
+    const res = await fetch(`/api/upscale?scale=${s}&sharpness=${k}`, {
+      method: "POST", body: bytes, headers: { "Content-Type": "application/octet-stream" },
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const url = URL.createObjectURL(await res.blob());
+    const afterImg = $("afterImg");
+    afterImg.onload = () => {
+      // 原图由浏览器缩放到输出尺寸，作为 before；这样两张图逐像素对齐，滑块才公平。
+      $("before").src = URL.createObjectURL(new Blob([bytes]));
+      $("before").onload = () => {
+        $("controls").style.visibility = "visible";
+        $("compare").style.display = "block";
+        $("status").textContent =
+          `${name} → ${afterImg.naturalWidth}x${afterImg.naturalHeight}（${s}x · 锐化 ${k}）`;
+        busy = false;
+      };
+    };
+    afterImg.src = url;
+  } catch (e) {
+    $("status").className = "error";
+    $("status").textContent = `失败：${e.message}`;
+    busy = false;
+  }
+}
+
+// 滑块：指针事件直接驱动 clip-path，避免 JS 动画。
+const compare = $("compare"), divider = $("divider");
+function setX(clientX) {
+  const r = compare.getBoundingClientRect();
+  const x = Math.min(Math.max((clientX - r.left) / r.width, 0), 1) * 100;
+  compare.style.setProperty("--x", x + "%");
+}
+divider.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  divider.setPointerCapture(e.pointerId);
+  const move = (ev) => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => setX(ev.clientX)); };
+  const up = () => { divider.removeEventListener("pointermove", move); divider.removeEventListener("pointerup", up); };
+  divider.addEventListener("pointermove", move);
+  divider.addEventListener("pointerup", up);
+});
+// 整个对比区可拖，不只分隔线。
+compare.addEventListener("pointerdown", (e) => {
+  if (e.target === divider) return;
+  setX(e.clientX);
+});
+</script>
+</body>
+</html>
