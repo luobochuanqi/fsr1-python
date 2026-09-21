@@ -3,174 +3,322 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FSR1 超分演示</title>
+<title>FSR1 超分对比</title>
 <style>
-  :root { color-scheme: dark; }
-  * { box-sizing: border-box; }
+  /* 暗色技术风：中性灰基底 + 单一琥珀强调色，全程只用这一个强调。 */
+  :root {
+    color-scheme: dark;
+    --bg: #101214;          /* 页面底 */
+    --panel: #16191c;       /* 控制面板 */
+    --line: #23272c;        /* 分隔线 */
+    --text: #d7dce0;        /* 主文字 */
+    --dim: #7d858c;         /* 次级文字 */
+    --accent: #e8a33d;      /* 强调（琥珀，低饱和） */
+    --accent-dim: #a0732a;
+    --sans: system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
   body {
-    margin: 0; min-height: 100vh; display: flex; flex-direction: column;
-    align-items: center; gap: 16px; padding: 24px;
-    font: 14px/1.5 system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
-    background: #111318; color: #e6e6e6;
+    font: 14px/1.5 var(--sans); color: var(--text); background: var(--bg);
+    display: flex; flex-direction: column; overflow: hidden;
   }
-  h1 { font-size: 18px; margin: 0; font-weight: 600; }
-  h1 small { font-weight: 400; color: #8a8f98; margin-left: 8px; }
-  #drop {
-    width: min(720px, 100%); border: 1px dashed #4a4f58; border-radius: 8px;
-    padding: 28px; text-align: center; color: #8a8f98; cursor: pointer;
-    transition: border-color .15s, color .15s;
+
+  /* 顶栏：品牌 + 上传，单行 56px。 */
+  header {
+    height: 56px; flex: none; display: flex; align-items: center; gap: 16px;
+    padding: 0 20px; border-bottom: 1px solid var(--line); background: var(--panel);
   }
-  #drop:hover, #drop.over { border-color: #7aa2f7; color: #7aa2f7; }
-  #drop input { display: none; }
-  #controls {
-    width: min(720px, 100%); display: flex; flex-wrap: wrap; gap: 16px;
-    align-items: center; justify-content: space-between; visibility: hidden;
+  .brand { display: flex; align-items: baseline; gap: 10px; }
+  .brand b { font-size: 15px; font-weight: 650; letter-spacing: 0.02em; }
+  .brand span { font-size: 12px; color: var(--dim); }
+  .upload-btn {
+    margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
+    height: 32px; padding: 0 14px; border: 1px solid var(--line); border-radius: 4px;
+    background: transparent; color: var(--text); font: 13px var(--sans); cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
   }
-  label { display: flex; align-items: center; gap: 8px; }
-  input[type="range"] { accent-color: #7aa2f7; }
+  .upload-btn:hover { border-color: var(--accent-dim); color: var(--accent); }
+  .upload-btn:active { transform: translateY(1px); }
+  #fileInput { display: none; }
+
+  /* 舞台：占满剩余空间，图片 contain 居中。 */
+  #stage {
+    flex: 1; min-height: 0; position: relative; background: #0a0b0c;
+    display: grid; place-items: center; user-select: none; touch-action: none;
+  }
   #compare {
-    position: relative; width: min(720px, 100%); user-select: none;
-    touch-action: none; border-radius: 8px; overflow: hidden; display: none;
-    background: #000; line-height: 0;
+    position: relative; max-width: 100%; max-height: 100%;
+    line-height: 0; cursor: ew-resize;
   }
-  #compare img { width: 100%; display: block; pointer-events: none; }
+  #compare img {
+    max-width: 100vw; max-height: 100%; display: block;
+    object-fit: contain; pointer-events: none;
+  }
   #after { position: absolute; inset: 0; clip-path: inset(0 0 0 var(--x, 50%)); }
   #divider {
     position: absolute; top: 0; bottom: 0; left: var(--x, 50%); width: 2px;
-    background: #fff; cursor: ew-resize; touch-action: none;
+    background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.55); pointer-events: none;
   }
   #divider::after {
-    content: "↔"; position: absolute; top: 50%; left: 50%;
+    content: ""; position: absolute; top: 50%; left: 50%;
     transform: translate(-50%, -50%);
-    background: #fff; color: #111; border-radius: 50%;
-    width: 28px; height: 28px; display: grid; place-items: center;
-    font-size: 14px; font-weight: 700;
+    width: 34px; height: 34px; border-radius: 50%;
+    background: #fff; box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="18" height="12" viewBox="0 0 18 12"><path d="M5 1 L1 6 L5 11 M13 1 L17 6 L13 11" stroke="%23101214" stroke-width="2" fill="none" stroke-linecap="round"/></svg>');
+    background-repeat: no-repeat; background-position: center;
   }
   .tag {
-    position: absolute; top: 8px; padding: 2px 8px; border-radius: 4px;
-    background: rgba(17, 19, 24, .8); font-size: 12px; line-height: 1.6;
+    position: absolute; bottom: 12px; padding: 3px 10px; border-radius: 3px;
+    background: rgba(10, 11, 12, 0.72); backdrop-filter: blur(6px);
+    font: 11px/1.7 var(--mono); color: #c3cbd1; letter-spacing: 0.04em;
   }
-  #tagL { left: 8px; } #tagR { right: 8px; }
-  #status { color: #8a8f98; min-height: 1.5em; }
+  #tagL { left: 12px; } #tagR { right: 12px; color: var(--accent); }
+
+  /* 状态条：单行等宽信息。 */
+  #status {
+    flex: none; height: 34px; display: flex; align-items: center; gap: 10px;
+    padding: 0 20px; font: 12px var(--mono); color: var(--dim);
+    border-top: 1px solid var(--line); background: var(--panel);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #status .live { color: var(--accent); }
   #status.error { color: #e06c75; }
+
+  /* 控制台：底部操作区。 */
+  #console {
+    flex: none; display: flex; align-items: center; gap: 24px; flex-wrap: wrap;
+    padding: 12px 20px; border-top: 1px solid var(--line); background: var(--panel);
+  }
+  .group { display: flex; align-items: center; gap: 10px; }
+  .group-label { font: 11px var(--mono); color: var(--dim); letter-spacing: 0.06em; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+  .seg button {
+    height: 30px; min-width: 56px; padding: 0 12px; border: none; background: transparent;
+    color: var(--dim); font: 13px var(--sans); cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button.on { background: var(--accent); color: #141008; font-weight: 600; }
+  .seg button:not(.on):hover { color: var(--text); background: #1d2125; }
+  input[type="range"] { accent-color: var(--accent); width: 120px; }
+  .val { font: 12px var(--mono); color: var(--text); min-width: 42px; }
+
+  /* 画廊：左下角可折叠抽屉。 */
+  #galleryToggle {
+    display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px;
+    border: 1px solid var(--line); border-radius: 4px; background: transparent;
+    color: var(--dim); font: 13px var(--sans); cursor: pointer; transition: color 0.15s;
+  }
+  #galleryToggle:hover { color: var(--text); }
+  #gallery {
+    position: fixed; left: 20px; bottom: 108px; z-index: 10;
+    display: none; grid-template-columns: repeat(3, 108px); gap: 8px;
+    padding: 10px; border: 1px solid var(--line); border-radius: 6px;
+    background: rgba(16, 18, 20, 0.92); backdrop-filter: blur(10px);
+    box-shadow: 0 10px 40px rgba(0,0,0,0.45);
+  }
+  #gallery.open { display: grid; }
+  .thumb {
+    position: relative; width: 108px; height: 60px; border-radius: 4px; overflow: hidden;
+    border: 1px solid var(--line); cursor: pointer; padding: 0; background: #0a0b0c;
+    transition: border-color 0.15s;
+  }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+  .thumb.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .thumb span {
+    position: absolute; left: 4px; bottom: 4px; padding: 1px 5px; border-radius: 2px;
+    background: rgba(10,11,12,0.78); font: 10px var(--mono); color: #c3cbd1;
+  }
+  .thumb.on span { color: var(--accent); }
+
+  @media (max-width: 720px) {
+    #console { gap: 12px; }
+    .group { flex-wrap: wrap; }
+    #gallery { grid-template-columns: repeat(2, 108px); left: 12px; }
+  }
 </style>
 </head>
 <body>
-<h1>FSR1 超分演示<small>EASU + RCAS · NumPy 逐位复刻 AMD 参考实现</small></h1>
 
-<div id="drop">拖入或点击选择图片（最大边 512px）
-  <input type="file" accept="image/png,image/jpeg"></div>
+<header>
+  <div class="brand"><b>FSR1</b><span>EASU + RCAS · NumPy 逐位复刻 AMD 参考</span></div>
+  <button class="upload-btn" id="uploadBtn">上传图片</button>
+  <input type="file" id="fileInput" accept="image/png,image/jpeg">
+</header>
 
-<div id="controls">
-  <label>倍率 <input type="range" id="scale" min="1.25" max="2" step="0.25" value="2">
-    <span id="scaleV">2.0x</span></label>
-  <label>锐化 <input type="range" id="sharp" min="0" max="2" step="0.25" value="0.25">
-    <span id="sharpV">0.25</span></label>
+<div id="stage">
+  <div id="compare">
+    <img id="before" alt="原始分辨率" draggable="false">
+    <div id="after"><img id="afterImg" alt="FSR1 超分" draggable="false"></div>
+    <span class="tag" id="tagL">BILINEAR</span>
+    <span class="tag" id="tagR">FSR1</span>
+    <div id="divider"></div>
+  </div>
 </div>
 
-<div id="status">内置示例 · 可上传自己的图片替换</div>
+<div id="status"><span id="statusText">载入示例中</span></div>
 
-<div id="compare">
-  <img id="before" alt="原图">
-  <div id="after"><img id="afterImg" alt="超分结果"></div>
-  <span class="tag" id="tagL">原图（浏览器双线性放大到输出尺寸）</span>
-  <span class="tag" id="tagR">FSR1</span>
-  <div id="divider"></div>
+<div id="console">
+  <button id="galleryToggle">示例</button>
+  <div class="group">
+    <span class="group-label">倍率</span>
+    <div class="seg" id="scaleSeg">
+      <button data-scale="2" class="on">2x</button>
+      <button data-scale="4">4x</button>
+    </div>
+  </div>
+  <div class="group">
+    <span class="group-label">锐化</span>
+    <input type="range" id="sharp" min="0" max="2" step="0.05" value="0.2">
+    <span class="val" id="sharpV">0.20</span>
+  </div>
 </div>
+
+<div id="gallery"></div>
 
 <script>
 const $ = (id) => document.getElementById(id);
-const drop = $("drop"), fileInput = drop.querySelector("input");
-let bytes = null, name = "", busy = false, raf = 0;
+const statusEl = $("status"), statusText = $("statusText");
+const compare = $("compare"), divider = $("divider");
+let busy = false, raf = 0;
+// 当前展示状态：mode = "sample"（静态图对）| "upload"（API 实时计算）。
+let mode = "sample", curSample = "genshin", curScale = "2";
+let bytes = null, name = "";
 
-drop.addEventListener("click", () => fileInput.click());
-drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
-drop.addEventListener("dragleave", () => drop.classList.remove("over"));
-drop.addEventListener("drop", (e) => {
-  e.preventDefault(); drop.classList.remove("over");
-  if (e.dataTransfer.files[0]) load(e.dataTransfer.files[0]);
-});
-fileInput.addEventListener("change", () => { if (fileInput.files[0]) load(fileInput.files[0]); });
+const SAMPLES = [
+  { id: "genshin", label: "Genshin" },
+  { id: "tombraider", label: "Tomb Raider" },
+];
 
-// 展示一对图（before URL + after URL + 状态文字）；上传与示例共用。
-function showPair(beforeUrl, afterUrl, text) {
-  const afterImg = $("afterImg");
-  afterImg.onload = () => {
-    $("before").src = beforeUrl;
-    $("before").onload = () => {
-      $("controls").style.visibility = "visible";
-      $("compare").style.display = "block";
-      $("status").className = "";
-      $("status").textContent = text;
-      busy = false;
-    };
-  };
-  afterImg.src = afterUrl;
+function setStatus(text, live = false, error = false) {
+  statusText.textContent = text;
+  statusText.className = live ? "live" : "";
+  statusEl.classList.toggle("error", error);
 }
 
-// 默认展示预跑好的示例（512 输入 / 2x / 锐化 0.2），无需上传。
-showPair("/sample/origin.jpg", "/sample/fsr1.jpg", "内置示例 512x288 → 1024x576（2x · 锐化 0.2）");
-
-function load(file) {
-  bytes = null;
-  const reader = new FileReader();
-  reader.onload = () => { bytes = reader.result; name = file.name; run(); };
-  reader.readAsArrayBuffer(file);
+// 载入内置示例的某一倍率图对；origin 一律为 before，超分图为 after。
+function showSample(sampleId, scale) {
+  mode = "sample"; curSample = sampleId; curScale = scale;
+  const s = SAMPLES.find((s) => s.id === sampleId);
+  const scaleSeg = $("scaleSeg");
+  scaleSeg.querySelectorAll("button").forEach((b) =>
+    b.classList.toggle("on", b.dataset.scale === scale));
+  const before = `/sample/${sampleId}/origin.jpg`;
+  const after = `/sample/${sampleId}/${scale}x.jpg`;
+  // 示例对只有 2x/4x 两档；上传后锐化档才生效，示例固定 0.2。
+  $("sharp").value = "0.2"; $("sharpV").textContent = "0.20";
+  setPair(before, after,
+    `${s.label} · 1920x1080 → ${scale === "2" ? "3840x2160" : "7680x4320"} · FSR1 ${scale}x`);
 }
 
-for (const [id, fmt] of [["scale", (v) => v.toFixed(2) + "x"], ["sharp", (v) => v.toFixed(2)]]) {
-  $(id).addEventListener("input", (e) => { $(id + "V").textContent = fmt(parseFloat(e.target.value)); });
-  $(id).addEventListener("change", () => { if (bytes) run(); });
-}
-
-async function run() {
+// 上传路径：按当前倍率档 POST，返回超分图。
+async function runUpload(scale) {
   if (!bytes || busy) return;
   busy = true;
-  const s = $("scale").value, k = $("sharp").value;
-  $("status").className = ""; $("status").textContent = "超分计算中（约 1-2s）…";
+  setStatus(`超分计算中 ${scale}x · 约 1-2 秒`, true);
   try {
-    const res = await fetch(`/api/upscale?scale=${s}&sharpness=${k}`, {
+    const res = await fetch(`/api/upscale?scale=${scale}&sharpness=${$("sharp").value}`, {
       method: "POST", body: bytes, headers: { "Content-Type": "application/octet-stream" },
     });
     if (!res.ok) throw new Error(await res.text());
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    // 尺寸从返回图自读，避免依赖响应头。
+    const url = URL.createObjectURL(await res.blob());
     const dim = await new Promise((ok) => {
       const probe = new Image();
-      probe.onload = () => ok([probe.naturalWidth, probe.naturalHeight]);
+      probe.onload = () => ok(`${probe.naturalWidth}x${probe.naturalHeight}`);
       probe.src = url;
     });
-    // 原图由浏览器缩放到输出尺寸，作为 before；这样两张图逐像素对齐，滑块才公平。
-    showPair(URL.createObjectURL(new Blob([bytes])), url,
-      `${name} → ${dim[0]}x${dim[1]}（${s}x · 锐化 ${k}）`);
+    // before 用原图字节，浏览器缩放到输出尺寸，与 after 逐像素对齐。
+    setPair(URL.createObjectURL(new Blob([bytes])), url,
+      `${name} → ${dim} · FSR1 ${scale}x · 锐化 ${$("sharp").value}`);
   } catch (e) {
-    $("status").className = "error";
-    $("status").textContent = `失败：${e.message}`;
+    setStatus(`失败 ${e.message}`, false, true);
     busy = false;
   }
 }
 
-// 滑块：指针事件直接驱动 clip-path，避免 JS 动画。
-const compare = $("compare"), divider = $("divider");
+function setPair(beforeUrl, afterUrl, text) {
+  const afterImg = $("afterImg");
+  afterImg.onload = () => {
+    $("before").src = beforeUrl;
+    $("before").onload = () => {
+      setStatus(text);
+      busy = false;
+    };
+  };
+  // 图片加载失败也要解锁，否则交互被 busy 永久锁死。
+  afterImg.onerror = $("before").onerror = () => {
+    setStatus("图片加载失败", false, true);
+    busy = false;
+  };
+  afterImg.src = afterUrl;
+}
+
+// 画廊按钮。
+const gallery = $("gallery"), galleryToggle = $("galleryToggle");
+galleryToggle.addEventListener("click", () => gallery.classList.toggle("open"));
+for (const s of SAMPLES) {
+  const b = document.createElement("button");
+  b.className = "thumb";
+  b.innerHTML = `<img src="/sample/${s.id}/origin.jpg" alt="${s.label}"><span>${s.label}</span>`;
+  b.addEventListener("click", () => {
+    gallery.classList.remove("open");
+    showSample(s.id, curScale);
+    markThumb();
+  });
+  gallery.appendChild(b);
+}
+function markThumb() {
+  gallery.querySelectorAll(".thumb").forEach((b, i) =>
+    b.classList.toggle("on", SAMPLES[i].id === curSample));
+}
+markThumb();
+
+// 倍率分段：示例直接切静态图；上传走重新计算。
+$("scaleSeg").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b || busy) return;
+  if (mode === "sample") showSample(curSample, b.dataset.scale);
+  else runUpload(b.dataset.scale);
+});
+
+// 锐化滑杆：仅上传模式生效（示例是固定 0.2 的预跑结果）。
+$("sharp").addEventListener("input", (e) => {
+  $("sharpV").textContent = parseFloat(e.target.value).toFixed(2);
+});
+$("sharp").addEventListener("change", () => { if (mode === "upload") runUpload(curScale); });
+
+// 上传：任何上传进入 upload 模式；超限（>512px 边）会被 API 拒绝并提示。
+$("uploadBtn").addEventListener("click", () => $("fileInput").click());
+$("fileInput").addEventListener("change", () => {
+  const f = $("fileInput").files[0];
+  if (!f) return;
+  mode = "upload"; bytes = null; name = f.name;
+  setStatus("读取文件中", true);
+  const reader = new FileReader();
+  reader.onload = () => { bytes = reader.result; runUpload($("scaleSeg").querySelector(".on").dataset.scale); };
+  reader.readAsArrayBuffer(f);
+});
+
+// 滑块拖动：整个对比区可拖，pointer capture 保证移出仍跟随。
+compare.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  compare.setPointerCapture(e.pointerId);
+  setX(e.clientX);
+});
+compare.addEventListener("pointermove", (e) => {
+  if (e.buttons !== 1) return;
+  cancelAnimationFrame(raf);
+  raf = requestAnimationFrame(() => setX(e.clientX));
+});
 function setX(clientX) {
   const r = compare.getBoundingClientRect();
   const x = Math.min(Math.max((clientX - r.left) / r.width, 0), 1) * 100;
   compare.style.setProperty("--x", x + "%");
 }
-divider.addEventListener("pointerdown", (e) => {
-  e.preventDefault();
-  divider.setPointerCapture(e.pointerId);
-  const move = (ev) => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => setX(ev.clientX)); };
-  const up = () => { divider.removeEventListener("pointermove", move); divider.removeEventListener("pointerup", up); };
-  divider.addEventListener("pointermove", move);
-  divider.addEventListener("pointerup", up);
-});
-// 整个对比区可拖，不只分隔线。
-compare.addEventListener("pointerdown", (e) => {
-  if (e.target === divider) return;
-  setX(e.clientX);
-});
+
+showSample("genshin", "2");
 </script>
 </body>
 </html>

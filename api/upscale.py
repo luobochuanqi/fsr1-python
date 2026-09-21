@@ -16,6 +16,8 @@ from PIL import Image
 
 from fsr1 import upscale
 
+SAMPLES = ("genshin", "tombraider")  # sample/ 下的示例图对名
+
 MAX_EDGE = 512  # 输入最大边；NumPy 路径在 512 时约 1.2s
 MAX_PIXELS = MAX_EDGE * MAX_EDGE * 4  # 4M px，防解压炸弹
 MAX_UPLOAD = 8 * 1024 * 1024  # 8 MB
@@ -35,11 +37,12 @@ def app(environ, start_response):
 
 def _sample(environ, start_response):
     # 内置示例图对（预跑好的 FSR1 结果），页面默认展示，无需上传即可看效果。
-    name = environ["PATH_INFO"].removeprefix("/sample/")
-    if name not in ("origin.jpg", "fsr1.jpg"):
+    # 白名单校验 + 集合元素拼接，天然免疫路径穿越。
+    parts = environ["PATH_INFO"].removeprefix("/sample/").split("/")
+    if len(parts) != 2 or parts[0] not in SAMPLES or parts[1] not in ("origin.jpg", "2x.jpg", "4x.jpg"):
         start_response("404 Not Found", [("Content-Type", "text/plain")])
         return [b"not found"]
-    return _file(f"sample/{name}", "image/jpeg", environ, start_response)
+    return _file(f"sample/{parts[0]}/{parts[1]}", "image/jpeg", environ, start_response)
 
 
 def _file(path, ctype, environ, start_response):
@@ -90,7 +93,8 @@ def _upscale(environ, start_response):
         sharpness = float(q.get("sharpness", "0.25"))
     except ValueError:
         return err("scale/sharpness must be numbers")
-    scale = min(max(scale, 1.25), 2.0)
+    # 512px 上限下 4x 输出 2048px、PNG 仍在响应体限制内，无需收紧。
+    scale = min(max(scale, 1.25), 4.0)
     sharpness = min(max(sharpness, 0.0), 2.0)
 
     src = np.asarray(im, dtype=np.float32) / np.float32(255.0)
