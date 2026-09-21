@@ -26,24 +26,35 @@ def app(environ, start_response):
     if environ["PATH_INFO"] == "/api/upscale":
         return _upscale(environ, start_response)
     if environ["REQUEST_METHOD"] == "GET" and environ["PATH_INFO"] in ("/", "/index.html"):
-        return _index(environ, start_response)
+        return _file("index.html", "text/html; charset=utf-8", environ, start_response)
+    if environ["REQUEST_METHOD"] == "GET" and environ["PATH_INFO"].startswith("/sample/"):
+        return _sample(environ, start_response)
     start_response("404 Not Found", [("Content-Type", "text/plain")])
     return [b"not found"]
 
 
-def _index(environ, start_response):
-    # Vercel 的 cwd 是项目根，index.html 就在根上。
+def _sample(environ, start_response):
+    # 内置示例图对（预跑好的 FSR1 结果），页面默认展示，无需上传即可看效果。
+    name = environ["PATH_INFO"].removeprefix("/sample/")
+    if name not in ("origin.jpg", "fsr1.jpg"):
+        start_response("404 Not Found", [("Content-Type", "text/plain")])
+        return [b"not found"]
+    return _file(f"sample/{name}", "image/jpeg", environ, start_response)
+
+
+def _file(path, ctype, environ, start_response):
+    # Vercel 的 cwd 是项目根，文件就在根上。
     try:
-        with open("index.html", "rb") as f:
-            page = f.read()
+        with open(path, "rb") as f:
+            body = f.read()
     except OSError:
         start_response("500 Internal Server Error", [("Content-Type", "text/plain")])
-        return [b"index.html missing"]
+        return [f"{path} missing".encode()]
     start_response("200 OK", [
-        ("Content-Type", "text/html; charset=utf-8"),
-        ("Content-Length", str(len(page))),
+        ("Content-Type", ctype),
+        ("Content-Length", str(len(body))),
     ])
-    return [page]
+    return [body]
 
 
 def _upscale(environ, start_response):

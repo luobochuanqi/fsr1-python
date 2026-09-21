@@ -39,7 +39,9 @@ Python 库接口：`upscale(img, scale, sharpness=None)`，输入输出均为 fl
 ## Web 演示
 
 滑块对比页：左半为原图（浏览器双线性放大到输出尺寸），右半为 FSR1 结果，可拖动
-分隔线逐像素对比。
+分隔线逐像素对比。页面默认展示 `sample/` 下的内置示例对——取自 `input/` 与
+`output/` 已有 2x 结果的中心裁剪（512 输入 / 2x / 锐化 0.2），无需上传即可看
+效果；上传自己的图片后替换为实时计算结果。
 
 ```bash
 uv run python serve.py        # 本地：http://127.0.0.1:8000

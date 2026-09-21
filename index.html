@@ -68,7 +68,7 @@
     <span id="sharpV">0.25</span></label>
 </div>
 
-<div id="status">等待输入。</div>
+<div id="status">内置示例 · 可上传自己的图片替换</div>
 
 <div id="compare">
   <img id="before" alt="原图">
@@ -92,6 +92,25 @@ drop.addEventListener("drop", (e) => {
 });
 fileInput.addEventListener("change", () => { if (fileInput.files[0]) load(fileInput.files[0]); });
 
+// 展示一对图（before URL + after URL + 状态文字）；上传与示例共用。
+function showPair(beforeUrl, afterUrl, text) {
+  const afterImg = $("afterImg");
+  afterImg.onload = () => {
+    $("before").src = beforeUrl;
+    $("before").onload = () => {
+      $("controls").style.visibility = "visible";
+      $("compare").style.display = "block";
+      $("status").className = "";
+      $("status").textContent = text;
+      busy = false;
+    };
+  };
+  afterImg.src = afterUrl;
+}
+
+// 默认展示预跑好的示例（512 输入 / 2x / 锐化 0.2），无需上传。
+showPair("/sample/origin.jpg", "/sample/fsr1.jpg", "内置示例 512x288 → 1024x576（2x · 锐化 0.2）");
+
 function load(file) {
   bytes = null;
   const reader = new FileReader();
@@ -114,20 +133,17 @@ async function run() {
       method: "POST", body: bytes, headers: { "Content-Type": "application/octet-stream" },
     });
     if (!res.ok) throw new Error(await res.text());
-    const url = URL.createObjectURL(await res.blob());
-    const afterImg = $("afterImg");
-    afterImg.onload = () => {
-      // 原图由浏览器缩放到输出尺寸，作为 before；这样两张图逐像素对齐，滑块才公平。
-      $("before").src = URL.createObjectURL(new Blob([bytes]));
-      $("before").onload = () => {
-        $("controls").style.visibility = "visible";
-        $("compare").style.display = "block";
-        $("status").textContent =
-          `${name} → ${afterImg.naturalWidth}x${afterImg.naturalHeight}（${s}x · 锐化 ${k}）`;
-        busy = false;
-      };
-    };
-    afterImg.src = url;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    // 尺寸从返回图自读，避免依赖响应头。
+    const dim = await new Promise((ok) => {
+      const probe = new Image();
+      probe.onload = () => ok([probe.naturalWidth, probe.naturalHeight]);
+      probe.src = url;
+    });
+    // 原图由浏览器缩放到输出尺寸，作为 before；这样两张图逐像素对齐，滑块才公平。
+    showPair(URL.createObjectURL(new Blob([bytes])), url,
+      `${name} → ${dim[0]}x${dim[1]}（${s}x · 锐化 ${k}）`);
   } catch (e) {
     $("status").className = "error";
     $("status").textContent = `失败：${e.message}`;
