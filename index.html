@@ -49,10 +49,15 @@
     display: flex; align-items: center; justify-content: center;
     user-select: none; touch-action: none; overflow: hidden;
   }
-  /* 对比框：宽高完全由 JS fitCompare() 按输出图宽高比 contain 计算并写像素，
-     防被自然尺寸撑破，也避免 CSS 百分比高度链的塌缩问题。 */
+  /* 对比框：宽高由 JS fitCompare() 按输出图宽高比 contain 计算并写像素。
+     内部 #zoom 承载缩放/平移变换（滚轮以光标为中心）。 */
   #compare {
-    position: relative; line-height: 0; cursor: ew-resize; flex: none;
+    position: relative; line-height: 0; cursor: grab; flex: none;
+    overflow: hidden;
+  }
+  #zoom {
+    position: absolute; inset: 0; transform-origin: 0 0;
+    will-change: transform;
   }
   #compare img {
     position: absolute; inset: 0; width: 100%; height: 100%;
@@ -149,14 +154,15 @@
   <button class="upload-btn" id="uploadBtn">上传图片</button>
   <input type="file" id="fileInput" accept="image/png,image/jpeg">
 </header>
-
 <div id="stage">
   <div id="compare">
-    <img id="before" alt="原始分辨率" draggable="false">
-    <div id="after"><img id="afterImg" alt="FSR1 超分" draggable="false"></div>
+    <div id="zoom">
+      <img id="before" alt="原始分辨率" draggable="false">
+      <div id="after"><img id="afterImg" alt="FSR1 超分" draggable="false"></div>
+      <div id="divider"></div>
+    </div>
     <span class="tag" id="tagL">BILINEAR</span>
     <span class="tag" id="tagR">FSR1</span>
-    <div id="divider"></div>
   </div>
 </div>
 
@@ -213,13 +219,83 @@ function applyFit() {
   const pad = 16;
   const bw = r.width - pad * 2, bh = r.height - pad * 2;
   let cw = bw, ch = cw / fitAR;
-  if (ch > bh) { ch = bh; cw = ch * fitAR; }
+
   compare.style.width = Math.round(cw) + "px";
   compare.style.height = Math.round(ch) + "px";
 }
-new ResizeObserver(applyFit).observe(stage);
+// ===== 缩放与平移 =====
+// #zoom 铺满 #compare（overflow hidden），transform-origin: 0 0，
+// transform = translate(t) scale(s)。图坐标 p、compare 内坐标 q 满足 q = p*s + t。
+// 滚轮以光标为锚点：缩放前后光标下的图坐标不变。
+const zoom = $("zoom");
+let zs = 1, ztx = 0, zty = 0;
+
+function applyZoom() {
+  zoom.style.transform = `translate(${ztx}px, ${zty}px) scale(${zs})`;
+}
+
+// 平移范围约束：缩放后图像相对 compare 视口不滑出边界；比视口小时居中。
+function clampPan() {
+  const w = compare.offsetWidth, h = compare.offsetHeight;
+  const sw = w * zs, sh = h * zs;
+  if (sw > w) ztx = Math.min(0, Math.max(w - sw, ztx));
+  else ztx = (w - sw) / 2;
+  if (sh > h) zty = Math.min(0, Math.max(h - sh, zty));
+  else zty = (h - sh) / 2;
+}
+
+compare.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const rect = compare.getBoundingClientRect();
+  const qx = e.clientX - rect.left, qy = e.clientY - rect.top;
+  const f = e.deltaY > 0 ? 1 / 1.12 : 1.12;
+  const ns = Math.min(Math.max(zs * f, 1), 24);
+  if (ns === zs) return;
+  // 锚点图坐标（缩放前），要求缩放后仍对准光标：
+  const ax = (qx - ztx) / zs, ay = (qy - zty) / zs;
+  zs = ns;
+  ztx = qx - ax * zs;
+  zty = qy - ay * zs;
+  clampPan();
+  applyZoom();
+}, { passive: false });
+
+// 缩放>1 拖拽平移；否则拖分割线。统一在此分发，避免双 pointerdown 冲突。
+let pane = false, plx = 0, ply = 0;
+compare.addEventListener("pointerdown", (e) => {
+  pane = zs > 1;
+  if (pane) {
+    e.preventDefault();
+    compare.setPointerCapture(e.pointerId);
+    plx = e.clientX; ply = e.clientY;
+  } else {
+    setX(e.clientX);
+  }
+});
+compare.addEventListener("pointermove", (e) => {
+  if (e.buttons === 0) return;
+  if (pane) {
+    const dx = e.clientX - plx, dy = e.clientY - ply;
+    plx = e.clientX; ply = e.clientY;
+    ztx += dx; zty += dy;
+    clampPan();
+    applyZoom();
+  } else {
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(() => setX(e.clientX));
+  }
+});
+compare.addEventListener("pointerup", () => { pane = false; });
+compare.addEventListener("pointercancel", () => { pane = false; });
+
+// 双击复位。
+compare.addEventListener("dblclick", () => {
+  zs = 1; ztx = 0; zty = 0; applyZoom();
+});
 
 function setPair(beforeUrl, afterUrl, text) {
+  // 切换图对/倍率时复位缩放与平移。
+  zs = 1; ztx = 0; zty = 0; applyZoom();
   const afterImg = $("afterImg");
   afterImg.onload = () => {
     fitCompare(afterImg.naturalWidth, afterImg.naturalHeight);
@@ -322,18 +398,6 @@ $("fileInput").addEventListener("change", () => {
   const reader = new FileReader();
   reader.onload = () => { bytes = reader.result; runUpload($("scaleSeg").querySelector(".on").dataset.scale); };
   reader.readAsArrayBuffer(f);
-});
-
-// 滑块拖动：整个对比区可拖，pointer capture 保证移出仍跟随。
-compare.addEventListener("pointerdown", (e) => {
-  e.preventDefault();
-  compare.setPointerCapture(e.pointerId);
-  setX(e.clientX);
-});
-compare.addEventListener("pointermove", (e) => {
-  if (e.buttons !== 1) return;
-  cancelAnimationFrame(raf);
-  raf = requestAnimationFrame(() => setX(e.clientX));
 });
 function setX(clientX) {
   const r = compare.getBoundingClientRect();
