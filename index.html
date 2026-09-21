@@ -246,11 +246,13 @@ function showSample(sampleId, scale) {
     b.classList.toggle("on", b.dataset.scale === scale));
   const before = `/sample/${sampleId}/origin.jpg`;
   const after = `/sample/${sampleId}/${scale}x.jpg`;
-  $("sharp").value = "0.2"; $("sharpV").textContent = "0.20";
   setPair(before, after,
     `${s.label} · 1920x1080 → ${scale === "2" ? "3840x2160" : "7680x4320"} · FSR1 ${scale}x`);
+  // 预取另一倍率，切档即时（图片已缓存于浏览器）。
+  const other = scale === "2" ? "4" : "2";
+  const pre = new Image();
+  pre.src = `/sample/${sampleId}/${other}x.jpg`;
 }
-
 // 上传路径：按当前倍率档 POST，返回超分图。
 async function runUpload(scale) {
   if (!bytes || busy) return;

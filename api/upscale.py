@@ -53,9 +53,13 @@ def _file(path, ctype, environ, start_response):
     except OSError:
         start_response("500 Internal Server Error", [("Content-Type", "text/plain")])
         return [f"{path} missing".encode()]
+    # 静态资源长缓存：CDN 边缘直接命中，后续不触发函数。示例图路径含语义版本，
+    # 内容更新时改文件名即可失效，immutable 安全。
+    cache = "public, max-age=31536000, immutable"
     start_response("200 OK", [
         ("Content-Type", ctype),
         ("Content-Length", str(len(body))),
+        ("Cache-Control", cache),
     ])
     return [body]
 
