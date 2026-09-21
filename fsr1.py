@@ -1,118 +1,134 @@
-"""FSR1（EASU + RCAS）的 NumPy 复刻，可独立运行，忠实于 AMD FidelityFX Super Resolution 1。
+"""FSR1（EASU + RCAS）的 NumPy 实现。
 
-这是 AMD `ffx_fsr1.h`（repo/FidelityFX-FSR）里 EASU 与 RCAS 两趟的独立 NumPy 实现。
-它不是 HLSL 的复制，而是把同一套数学逐表达式用向量化 NumPy 重写一遍；下面每一处不直观的
-代码都带 `# ref:` 标记，指明它对应参考实现的哪个函数，便于静态核对。
+把 AMD FidelityFX Super Resolution 1.0 的两趟算法用向量化 NumPy 重写，顺序固定：
 
-管线（就是 FSR1 的两趟，顺序固定）：
-    低清 RGB --EASU--> 高清 RGB --RCAS--> 锐化后的高清 RGB
+    低清 RGB --EASU（上采样趟）--> 高清 RGB --RCAS（锐化趟）--> 锐化后的高清 RGB
 
-EASU 是边缘自适应空间上采样：12 抽头窗口按局部梯度方向旋转、拉伸，边缘处收紧，平坦区做
-类似 Lanczos 的柔性插值。RCAS 是对比度自适应锐化：按局部对比度给 4 邻域重新加权，并做硬限
-幅，避免过冲产生振铃。
+EASU 对单帧做边缘自适应的空间上采样：12 抽头窗口的权重按局部梯度方向旋转、拉伸，边缘收紧、
+平坦区做柔性插值。RCAS 在放大后的图上做对比度自适应锐化：按局部对比度给 4 邻域加权，并做
+硬限幅以抑制振铃。两趟都是纯空间的，不需要历史帧、运动矢量或额外缓冲。
 
-HLSL 里用 GPU 的近似 rcp/rsqrt 位技巧，本实现用的是同一套位技巧（见 rcp_lo / rsq_lo /
-rcp_med），因此数值行为贴合 shader，而不是仅仅“接近”。唯一的刻意偏差在 RCAS 限幅：参考在纯
-黑/纯白这类退化区域依赖 HLSL 对 nan 不敏感的比较，本实现把同样的情形用 x/0 取 0 变成有限值，
-这正是其极限值。
+算法、常量与系数全部取自 AMD 的 `ffx_fsr1.h` / `ffx_a.h`（MIT 许可）。参考实现是
+`../repo/FidelityFX-FSR/` 的只读克隆。每一处不直观的代码都带 `# ref:` 标记，指明它对应参考
+实现的哪一行，可静态核对。
 
-只依赖 NumPy（CLI 另需 Pillow）。
+与参考实现的三处对应约定：
+  * HLSL 的 `min`/`max` 用 `np.fmin`/`np.fmax` 对应。D3D 规定其中一个操作数为 NaN 时返回另一
+    个操作数，两者语义一致——这不是风格选择，而是让退化输入（如纯黑/纯白常数图）的数值行为
+    与 shader 相同。
+  * `ARcpF1` 就是普通 IEEE 的 1/x，这里用真除法对应；x==0 会得到 inf，随后由上一条的
+    NaN 容错 min/max 吸收，因此不需要任何除零保护。
+  * 参考用 `textureGather` 取 4 组 2x2 纹素块（GPU 的打包读取）；这里直接按 12 个抽头的像素
+    坐标取值，取到的是同一批像素，只是省掉了打包。
+
+范围：只实现 FP32 标量路径（`FsrEasuF` / `FsrRcasF`）。参考里的 FP16 打包路径（`*H`）与双
+tile 路径（`*Hx2`）是为 GPU 吞吐服务的，与算法无关，未移植。AMD 亦以 FP16 为默认、FP32 为
+回退，这里对应的是回退路径。
+
+只依赖 NumPy（CLI 另需 Pillow），Python >= 3.12。
 
 ---
 
-FSR1 in NumPy: a faithful, runnable port of AMD FidelityFX Super Resolution 1.
+FSR1 (EASU + RCAS) in NumPy.
 
-An independent NumPy implementation of the EASU and RCAS passes from AMD's
-`ffx_fsr1.h` (repo/FidelityFX-FSR). It is not a copy of the HLSL: it re-expresses the
-same math in vectorized NumPy, one expression at a time. Every non-obvious line below
-carries a `# ref:` marker naming the reference function it mirrors, so the
-correspondence can be checked statically.
+A vectorized re-implementation of the two passes of AMD FidelityFX Super Resolution 1.0,
+in fixed order:
 
-Pipeline (exactly FSR1's two passes, in order):
-    low-res RGB --EASU--> high-res RGB --RCAS--> sharpened high-res RGB
+    low-res RGB --EASU (upscaling pass)--> high-res RGB --RCAS (sharpening pass)--> sharpened
 
-EASU is an edge-adaptive spatial upsampler: a 12-tap window whose tap weights are
-rotated and stretched by the local gradient, so edges stay crisp while flat areas get a
-soft Lanczos-like interpolation. RCAS is a contrast-adaptive sharp pass that re-weights
-the 4-neighbour ring by the local contrast, with hard limiting so it never overshoots
-into ringing.
+EASU performs edge-adaptive spatial upsampling of a single frame: the weights of a
+12-tap window are rotated and stretched by the local gradient, so edges tighten while
+flat areas get a soft interpolation. RCAS then sharpens the upscaled image by weighting
+the 4-neighbour ring against the local contrast, with hard limiting to suppress ringing.
+Both passes are purely spatial: no history frame, motion vectors, or extra buffers.
 
-Where the HLSL uses the GPU's approximate rcp/rsqrt bit-hacks, this port uses the *same*
-bit-hacks (see rcp_lo / rsq_lo / rcp_med), so the numeric behaviour matches the shader
-rather than merely being "close". The one deliberate deviation is in RCAS limiting,
-where the shader relies on HLSL's nan-tolerant comparisons in degenerate all-black /
-all-white regions; this port makes the same cases finite by treating x/0 as 0, which is
-the correct limiting value.
+The algorithm, constants and coefficients all come from AMD's `ffx_fsr1.h` / `ffx_a.h`
+(MIT licensed); the reference implementation is the read-only clone at
+`../repo/FidelityFX-FSR/`. Every non-obvious line carries a `# ref:` marker naming the
+reference line it mirrors, so the correspondence can be checked statically.
 
-Only NumPy (+ Pillow for the CLI) is required.
+Three correspondence conventions:
+  * HLSL `min`/`max` map to `np.fmin`/`np.fmax`. D3D specifies that when one operand is
+    NaN the other is returned, which is exactly their semantics - not a style choice, but
+    what makes degenerate inputs (a constant black or white frame) behave as in the
+    shader.
+  * `ARcpF1` is plain IEEE 1/x, mapped to true division; x==0 yields inf, which the
+    NaN-tolerant min/max above then absorbs, so no divide-by-zero guard is needed.
+  * The reference fetches four 2x2 texel blocks with `textureGather` (a GPU packing
+    trick); this port reads the same pixels directly at the 12 tap coordinates.
+
+Scope: only the FP32 scalar path (`FsrEasuF` / `FsrRcasF`). The FP16 packed paths (`*H`)
+and the dual-tile paths (`*Hx2`) exist for GPU throughput and are irrelevant to the
+algorithm. AMD likewise defaults to FP16 with an FP32 fallback - this is that fallback.
+
+NumPy only (plus Pillow for the CLI), Python >= 3.12.
 """
 
 import numpy as np
 
-# 锐化的自然度上限：超过这个强度结果就开始显得不自然。
+# 锐化强度的自然度上限，超过它结果就开始显得不自然。
 # Limit past which sharpening starts to produce unnatural results.
 # ref: ffx_fsr1.h:654  (FSR_RCAS_LIMIT)
 RCAS_LIMIT = np.float32(0.25 - 1.0 / 16.0)
 
 
 def _bits(a):
-    # 把 float32 当成 uint32 看待，供下面的位技巧使用。
-    # Reinterpret float32 bits as uint32, as the bit-hacks below require.
+    # 把 float32 的位重新解释成 uint32，供下面的位技巧使用。
+    # Reinterpret the bits of a float32 as uint32, as the bit-hacks below require.
     return np.ascontiguousarray(a, dtype=np.float32).view(np.uint32)
 
 
-# 三个 GPU 倒数近似，按位逐位复刻。
-# The three GPU reciprocal approximations, reproduced bit-for-bit.
+# 参考里三个 GPU 倒数近似，逐位复刻。
+# The reference's three GPU reciprocal approximations, reproduced bit-for-bit.
 # ref: ffx_a.h:1843-1845
 def rcp_lo(a):
-    """~1/a：靠浮点指数位的技巧得到，不做真正的除法。
-    APRxLoRcpF1: ~1/a via a float-exponent bit hack, no division."""
+    """≈1/a，用浮点指数位的技巧，不做真除法。
+    ~1/a via a float-exponent bit trick, no real division."""
     return (np.uint32(0x7EF07EBB) - _bits(a)).view(np.float32)
 
 
 def rsq_lo(a):
-    """~1/sqrt(a)：同样是位技巧。
-    APrxLoRsqF1: ~1/sqrt(a) via a bit hack."""
+    """≈1/sqrt(a)，同样是位技巧。
+    ~1/sqrt(a), also a bit trick."""
     return (np.uint32(0x5F347D74) - (_bits(a) >> np.uint32(1))).view(np.float32)
 
 
 def rcp_med(a):
-    """低精度倒数再加一步牛顿迭代，精度中等。
-    APrxMedRcpF1: the low-precision reciprocal plus one Newton step."""
+    """低精度倒数再加一步牛顿迭代。
+    The low-precision reciprocal plus one Newton step."""
     b = (np.uint32(0x7EF19FFF) - _bits(a)).view(np.float32)
     return b * (-b * a + np.float32(2.0))
 
 
-def _safe_rcp(x):
-    """精确的 1/x，但把 x==0 的结果取 0（见模块 docstring 的退化情形说明）。
-    Exact 1/x with x==0 mapped to 0 (see the module docstring's degenerate-case note)."""
-    out = np.zeros_like(x, dtype=np.float32)
-    np.divide(np.float32(1.0), x, out=out, where=(x != 0))
-    return out
+def _rcp(x):
+    """参考的 ARcpF1：普通 IEEE 1/x，x==0 得到 inf，交由 NaN 容错的 min/max 吸收。
+    The reference's ARcpF1: plain IEEE 1/x; x==0 gives inf, which the NaN-tolerant
+    min/max then absorbs."""
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.true_divide(np.float32(1.0), x)
 
 
 def _sat(x):
-    """把值夹到 [0,1]。
-    ASatF1: clamp to [0,1]."""
+    """夹到 [0,1]。
+    Clamp to [0,1]. ref: ffx_a.h:747 (ASatF1)"""
     return np.clip(x, np.float32(0.0), np.float32(1.0))
 
 
 def _luma(rgb):
-    """参考实现用的廉价亮度（乘 2 形式）：0.5*R + G + 0.5*B。
-    The reference's cheap luma-times-2: 0.5*R + G + 0.5*B.
-    ref: ffx_fsr1.h:363 (bczzL=bczzB*0.5+(bczzR*0.5+bczzG))"""
+    """2 倍亮度，用最省的近似 0.5R + G + 0.5B（省一次乘法，故结果是亮度的 2 倍）。
+    Luma times 2, with the cheapest approximation 0.5R + G + 0.5B (one multiply saved,
+    hence the factor of 2). ref: ffx_fsr1.h:363"""
     return rgb[..., 2] * np.float32(0.5) + (rgb[..., 0] * np.float32(0.5) + rgb[..., 1])
 
 
-# EASU 的 12 抽头核，偏移量以输入纹素为单位、相对基准纹素 floor(pp)。
-# 排布与字母沿用参考实现：
-# The 12-tap EASU kernel, offsets in input texels relative to the base texel floor(pp).
-# Layout and letters are the reference's:
+# EASU 的 12 抽头核：偏移以输入纹素为单位，相对基准纹素 floor(pp)。排布与字母沿用参考：
+# The EASU 12-tap kernel: offsets are in input texels, relative to the base texel
+# floor(pp). Layout and letters are the reference's:
 #     b c
 #   e f g h
 #   i j k l
 #     n o
-# ref: ffx_fsr1.h:328-434 (the tap offsets passed to FsrEasuTapF)
+# ref: ffx_fsr1.h:328-434  (the tap offsets handed to FsrEasuTapF)
 TAPS = (
     ("b", 0, -1), ("c", 1, -1), ("e", -1, 0), ("f", 0, 0), ("g", 1, 0), ("h", 2, 0),
     ("i", -1, 1), ("j", 0, 1), ("k", 1, 1), ("l", 2, 1), ("n", 0, 2), ("o", 1, 2),
@@ -120,22 +136,22 @@ TAPS = (
 
 
 def easu(src, scale):
-    """EASU 趟：边缘自适应空间上采样。
-    EASU pass: edge-adaptive spatial upsampling.
+    """EASU 上采样趟：边缘自适应空间上采样。
+    EASU upscaling pass: edge-adaptive spatial upsampling.
 
-    src: float32 (H, W, 3)，取值 [0,1]；scale：输出/输入比例（任意 >= 1）。
+    src：float32 (H, W, 3)，取值 [0,1]；scale：每维缩放倍数，不必为整数。
     返回 float32 (round(H*scale), round(W*scale), 3)。
-    src: float32 (H, W, 3) in [0,1]. scale: output/input ratio (any >= 1).
+    src: float32 (H, W, 3) in [0,1]. scale: per-dimension factor, need not be integral.
     Returns float32 (round(H*scale), round(W*scale), 3).
     """
     src = np.ascontiguousarray(src, dtype=np.float32)
     H, W = src.shape[:2]
     OH, OW = round(H * scale), round(W * scale)
 
-    # 取 viewport == 输入尺寸的 FsrEasuCon：一个输出像素步长在输入空间占多少，
-    # 以及用于对齐像素中心的半像素项。
-    # FsrEasuCon with viewport == input size: the fraction of an output pixel step in
-    # input space, and the half-pixel centring term.
+    # FsrEasuCon（viewport 取整幅输入）：一个输出像素步长在输入空间占多少，以及用于对齐
+    # 像素中心的半像素项。
+    # FsrEasuCon with viewport == the whole input: how much input space one output pixel
+    # step spans, plus the half-pixel term that centres the samples.
     # ref: ffx_fsr1.h:171-173
     sx_in, sy_in = np.float32(W / OW), np.float32(H / OH)
     ox = np.arange(OW, dtype=np.float32)
@@ -146,25 +162,27 @@ def easu(src, scale):
     # ref: ffx_fsr1.h:324-326  (pp = ip*con0.xy + con0.zw; fp = floor(pp); pp -= fp)
     FPX = np.floor(ppx)[None, :]           # (1, OW) 基准纹素 x 的整数部分 / integer base texel x
     FPY = np.floor(ppy)[:, None]           # (OH, 1) 基准纹素 y 的整数部分 / integer base texel y
-    FX = (ppx - np.floor(ppx))[None, :]    # (1, OW) pp.x 的小数部分 / fractional pp.x
-    FY = (ppy - np.floor(ppy))[:, None]    # (OH, 1) pp.y 的小数部分 / fractional pp.y
+    FX = (ppx - np.floor(ppx))[None, :]    # (1, OW) pp.x 的小数部分 / fractional part of pp.x
+    FY = (ppy - np.floor(ppy))[:, None]    # (OH, 1) pp.y 的小数部分 / fractional part of pp.y
 
     def fetch(dx, dy):
-        """按 fp+偏移 取纹素，越界处夹到边缘。
-        Texture fetch with clamp-to-edge. ref: gather taps at fp+offset."""
+        """取 fp+偏移 处的纹素，越界按边缘夹取（参考用的是 clamp 采样器）。
+        Fetch the texel at fp+offset, clamped at the borders (the reference relies on a
+        clamp sampler)."""
         ix = np.clip(FPX + dx, 0, W - 1).astype(np.intp)
         iy = np.clip(FPY + dy, 0, H - 1).astype(np.intp)
         return src[iy, ix]  # (OH, OW, 3)
 
-    # 第一遍：算出每个抽头的亮度（估计边缘方向与长度时需要）。
-    # Pass 1: luma of every tap (needed for the edge direction/length estimate).
+    # 先取全部 12 个抽头的亮度——估计边缘方向与长度只需要亮度。
+    # Fetch the luma of all 12 taps first: the edge direction and length estimate needs
+    # luma only.
     L = {name: _luma(fetch(dx, dy)) for name, dx, dy in TAPS}
 
-    # FsrEasuSetF 跑四次，对应输出像素的四个双线性角。每次取一个以 f、g、j 或 k
-    # 为中心的“十”字亮度，累加梯度方向（dir）与边缘长度（len）。
-    # FsrEasuSetF, run four times, one per bilinear corner of the output pixel. Each
-    # takes a "+" of luma centred on f, g, j or k and accumulates the gradient
-    # direction (dir) and edge length (len).
+    # FsrEasuSetF 跑四次，对应输出像素的四个双线性角（参考的形参名即 biS/biT/biU/biV）。
+    # 每次取一个以 f、g、j 或 k 为中心的“十”字亮度，累加梯度方向（dir）与边缘长度（len）。
+    # FsrEasuSetF runs four times, one per bilinear corner of the output pixel (the
+    # reference names these parameters biS/biT/biU/biV). Each takes a "+" of luma
+    # centred on f, g, j or k, accumulating gradient direction (dir) and edge length.
     # ref: ffx_fsr1.h:275-313,383-386
     dirx = np.zeros((OH, OW), np.float32)
     diry = np.zeros((OH, OW), np.float32)
@@ -173,13 +191,13 @@ def easu(src, scale):
     def setf(up, left, ctr, right, down, w):
         nonlocal dirx, diry, length
         # x 轴 / x axis
-        lenX = rcp_lo(np.maximum(np.abs(right - ctr), np.abs(ctr - left)))
+        lenX = rcp_lo(np.fmax(np.abs(right - ctr), np.abs(ctr - left)))
         dirX = right - left
         dirx = dirx + dirX * w
         lenX = _sat(np.abs(dirX) * lenX)
         length = length + (lenX * lenX) * w
         # y 轴 / y axis
-        lenY = rcp_lo(np.maximum(np.abs(down - ctr), np.abs(ctr - up)))
+        lenY = rcp_lo(np.fmax(np.abs(down - ctr), np.abs(ctr - up)))
         dirY = down - up
         diry = diry + dirY * w
         lenY = _sat(np.abs(dirY) * lenY)
@@ -190,10 +208,10 @@ def easu(src, scale):
     setf(L["f"], L["i"], L["j"], L["k"], L["n"], (1 - FX) * FY)        # 角 U / corner U
     setf(L["g"], L["j"], L["k"], L["l"], L["o"], FX * FY)              # 角 V / corner V
 
-    # 归一化梯度方向（带近零保护），随后整理长度、各向异性（len2）、负瓣强度（lob）
-    # 和窗口截断点（clp）。
-    # Normalize the gradient direction (with the near-zero guard), then shape length,
-    # anisotropy (len2), negative-lobe strength (lob) and the window clip point.
+    # 归一化梯度方向（近零时打平），再整理长度、各向异性（len2）、负瓣强度（lob）与窗口
+    # 截断点（clp）。
+    # Normalize the gradient direction (flattened when near zero), then shape the length,
+    # the anisotropy (len2), the negative-lobe strength (lob) and the window clip point.
     # ref: ffx_fsr1.h:389-409
     dirR = dirx * dirx + diry * diry
     zro = dirR < np.float32(1.0 / 32768.0)
@@ -203,23 +221,23 @@ def easu(src, scale):
 
     length = length * np.float32(0.5)
     length = length * length
-    stretch = (dirx * dirx + diry * diry) * rcp_lo(np.maximum(np.abs(dirx), np.abs(diry)))
+    stretch = (dirx * dirx + diry * diry) * rcp_lo(np.fmax(np.abs(dirx), np.abs(diry)))
     len2x = np.float32(1.0) + (stretch - np.float32(1.0)) * length
     len2y = np.float32(1.0) + np.float32(-0.5) * length
     lob = np.float32(0.5) + (np.float32(1.0 / 4.0 - 0.04) - np.float32(0.5)) * length
     clp = rcp_lo(lob)
 
-    # dering 的上下界：取 2x2 最近邻抽头（f、g、j、k）的 min/max。
-    # Dering bounds: min/max over the 2x2 nearest taps (f, g, j, k).
+    # 去振铃的上/下界：取 2x2 最近邻抽头（f、g、j、k）的 min/max。
+    # The deringing bounds: min/max over the 2x2 nearest taps (f, g, j, k).
     # ref: ffx_fsr1.h:416-419
     near = np.stack([fetch(0, 0), fetch(1, 0), fetch(0, 1), fetch(1, 1)])
-    min4 = near.min(axis=0)
-    max4 = near.max(axis=0)
+    min4 = np.fmin.reduce(near, axis=0)
+    max4 = np.fmax.reduce(near, axis=0)
 
-    # FsrEasuTapF 跑 12 次：把抽头偏移按梯度方向旋转、按 len2 拉伸，求锐化后的
-    # Lanczos-2 窗口权重，然后累加。
-    # FsrEasuTapF, 12 times: rotate the tap offset by the gradient, stretch by len2,
-    # evaluate the sharpened Lanczos-2 window, and accumulate.
+    # FsrEasuTapF 跑 12 次：把抽头偏移按梯度方向旋转、按 len2 拉伸，代入锐化过的
+    # Lanczos-2 近似窗口求权重，然后累加。
+    # FsrEasuTapF runs 12 times: rotate the tap offset by the gradient, stretch it by
+    # len2, evaluate the sharpened Lanczos-2 approximation for the weight, accumulate.
     # ref: ffx_fsr1.h:239-272,423-434
     aC = np.zeros((OH, OW, 3), np.float32)
     aW = np.zeros((OH, OW), np.float32)
@@ -230,37 +248,40 @@ def easu(src, scale):
         vy = offx * (-diry) + offy * dirx
         vx = vx * len2x
         vy = vy * len2y
-        d2 = np.minimum(vx * vx + vy * vy, clp)
+        d2 = np.fmin(vx * vx + vy * vy, clp)
         wB = np.float32(2.0 / 5.0) * d2 - np.float32(1.0)
         wA = lob * d2 - np.float32(1.0)
         w = (np.float32(25.0 / 16.0) * (wB * wB) - np.float32(25.0 / 16.0 - 1.0)) * (wA * wA)
         aC += fetch(dx, dy) * w[..., None]
         aW += w
 
-    # 归一化并做 dering 夹取。 / Normalize and dering-clamp.
+    # 归一化，再按上一步的 min4/max4 去振铃。
+    # Normalize, then dering against the min4/max4 computed above.
     # ref: ffx_fsr1.h:437
-    pix = aC * _safe_rcp(aW)[..., None]
-    return np.minimum(max4, np.maximum(min4, pix))
+    pix = aC * _rcp(aW)[..., None]
+    return np.fmin(max4, np.fmax(min4, pix))
 
 
 def rcas(src, sharpness=0.25):
-    """RCAS 趟：鲁棒对比度自适应锐化。
-    RCAS pass: robust contrast-adaptive sharpening.
+    """RCAS 锐化趟：鲁棒对比度自适应锐化。
+    RCAS sharpening pass: robust contrast adaptive sharpening.
 
-    src: float32 (H, W, 3) in [0,1]（即 EASU 的输出）。sharpness 单位是“档”（stops）：
-    0 = 最锐，越大越柔和（0.25 是 AMD sample 的默认值）。返回 float32 (H, W, 3)。
-    src: float32 (H, W, 3) in [0,1] (the EASU output). sharpness is in "stops": 0 =
-    maximum sharpening, larger = less (0.25 is AMD's sample default).
+    src：float32 (H, W, 3)，取值 [0,1]，即 EASU 的输出。sharpness 单位为档（stops）：
+    每整档锐化量减半，0.0 最锐，约 2.0 起不再有可见差别（AMD 文档推荐 0.2，示例代码默认
+    0.25）。返回 float32 (H, W, 3)。
+    src: float32 (H, W, 3) in [0,1], i.e. the EASU output. sharpness is in stops:
+    sharpening halves per whole stop, 0.0 is sharpest, values past about 2.0 make no
+    visible difference (AMD's doc recommends 0.2; the sample code defaults to 0.25).
     Returns float32 (H, W, 3).
     """
     src = np.ascontiguousarray(src, dtype=np.float32)
     H, W = src.shape[:2]
 
-    # FsrRcasCon：锐化量以 2^-sharpness 存储。 / sharpness is stored as 2^-sharpness.
+    # FsrRcasCon：锐化量以 2^-sharpness 存入常量。 / sharpness is stored as 2^-sharpness.
     # ref: ffx_fsr1.h:667
     con = np.float32(2.0) ** np.float32(-sharpness)
 
-    # 3x3 的“十”字邻域，越界处夹到边缘。 / The 3x3 "plus" neighbourhood, clamp-to-edge.
+    # 3x3 的“十”字邻域，越界按边缘夹取。 / The 3x3 "plus" neighbourhood, clamped at the borders.
     # ref: ffx_fsr1.h:697-707
     def shift(dx, dy):
         ys = np.clip(np.arange(H) + dy, 0, H - 1)
@@ -269,26 +290,33 @@ def rcas(src, sharpness=0.25):
 
     b, d, e, f, h = shift(0, -1), shift(-1, 0), src, shift(1, 0), shift(0, 1)
 
-    # 4 邻域环上的最小值与最大值。 / Min and max of the 4-neighbour ring.
+    # 4 邻域环上的 min/max。 / min/max over the 4-neighbour ring.
     # ref: ffx_fsr1.h:741-746
-    ring_min = np.minimum(np.minimum(b, d), np.minimum(f, h))
-    ring_max = np.maximum(np.maximum(b, d), np.maximum(f, h))
+    ring_min = np.fmin(np.fmin(b, d), np.fmin(f, h))
+    ring_max = np.fmax(np.fmax(b, d), np.fmax(f, h))
 
-    # 对比度限幅：逐通道衡量中心离邻域环已经有多远（peakC = (1.0, -4.0)）。
-    # Contrast limits: how far the centre already is from the ring, per channel
+    # 逐通道的对比度限幅：中心离邻域环已经有多远（peakC = (1.0, -4.0)）。
+    # Per-channel contrast limits: how far the centre already is from the ring
     # (peakC = (1.0, -4.0)).
     # ref: ffx_fsr1.h:747-758
-    hit_min = np.minimum(ring_min, e) * _safe_rcp(np.float32(4.0) * ring_max)
-    hit_max = (np.float32(1.0) - np.maximum(ring_max, e)) * _safe_rcp(np.float32(4.0) * ring_min - np.float32(4.0))
-    lobe = np.maximum(-hit_min, hit_max)
+    # 这里的 0*inf 会产生 NaN，这是参考行为的一部分——它会被下面的 np.fmax 吸收，所以显式
+    # 关掉告警，而不是消除 NaN 本身（消除会改变孤立亮点的锐化结果，见 _selftest）。
+    # The 0*inf here yields NaN as part of the reference behaviour; the np.fmax below
+    # absorbs it, so the warning is silenced rather than the NaN removed (removing it
+    # would change how isolated bright dots are sharpened - see _selftest).
+    with np.errstate(invalid="ignore"):
+        hit_min = np.fmin(ring_min, e) * _rcp(np.float32(4.0) * ring_max)
+        hit_max = (np.float32(1.0) - np.fmax(ring_max, e)) * _rcp(np.float32(4.0) * ring_min - np.float32(4.0))
+    lobe = np.fmax(-hit_min, hit_max)
 
-    # 收敛成一个标量 lobe，夹到安全区间，再乘 con。
-    # Collapse to a single scalar lobe, clamp to the safe range, scale by con.
+    # 三个通道收敛成一个标量 lobe，夹到安全区间，再乘上锐化量。
+    # Collapse the three channels to a single scalar lobe, clamp it to the safe range,
+    # then scale by the sharpening amount.
     # ref: ffx_fsr1.h:759
-    lobe = np.maximum(np.float32(-RCAS_LIMIT), np.minimum(lobe.max(axis=2), np.float32(0.0))) * con
+    lobe = np.fmax(np.float32(-RCAS_LIMIT), np.fmin(np.fmax.reduce(lobe, axis=2), np.float32(0.0))) * con
 
-    # 解算时用中精度倒数，避免出现可见的色调断层。
-    # Resolve, with the medium-precision reciprocal to avoid tonality banding.
+    # 解算：用中精度倒数，避免出现可见的色调断层。
+    # Resolve with the medium-precision reciprocal to avoid visible tonality banding.
     # ref: ffx_fsr1.h:765-768
     rcpL = rcp_med(np.float32(4.0) * lobe + np.float32(1.0))
     pix = (lobe[..., None] * (b + d + f + h) + e) * rcpL[..., None]
@@ -296,13 +324,13 @@ def rcas(src, sharpness=0.25):
 
 
 def upscale(img, scale, sharpness=0.25):
-    """完整的 FSR1 管线：先 EASU 后 RCAS。
-    Full FSR1 pipeline: EASU then RCAS.
+    """完整的 FSR1 管线：先 EASU 上采样，再 RCAS 锐化。
+    The full FSR1 pipeline: EASU upscaling followed by RCAS sharpening.
 
-    img: float32 (H, W, 3)，取值 [0,1]，返回放大并锐化后的图像。
-    sharpness=None 时跳过 RCAS，直接返回 EASU 的结果。
+    img：float32 (H, W, 3)，取值 [0,1]；返回放大并锐化后的图像。sharpness=None 表示只跑
+    EASU、跳过 RCAS。
     img: float32 (H, W, 3) in [0,1]. Returns the upscaled, sharpened image.
-    sharpness=None skips RCAS and returns the bare EASU upscale.
+    sharpness=None runs EASU only and skips RCAS.
     """
     out = easu(img, scale)
     if sharpness is None:
@@ -322,42 +350,59 @@ def _to_float(path_or_array):
 
 
 def _save(arr, path):
-    # 夹到 [0,1] 后按 8bit 量化写出。 / Clamp to [0,1] and write out as 8-bit.
+    # 夹到 [0,1] 后按 8 位量化写出。 / Clamp to [0,1], then quantize to 8 bits on write.
     from PIL import Image
     a = np.clip(arr, 0.0, 1.0)
     Image.fromarray((a * 255.0 + 0.5).astype(np.uint8)).save(path)
 
 
 def _selftest():
-    """一个可运行的自检：形状、值域、无 NaN，以及平坦色块的保真度。
-    One runnable check: shapes, range, no NaNs, and flat/tone fidelity."""
+    """一个可运行的自检：形状、值域、有限性，以及两条与参考一致的行为。
+    One runnable check: shape, range, finiteness, and two behaviours that must match the
+    reference."""
     rng = np.random.default_rng(0)
-    # 一片平坦的中灰经过两趟后应当基本不变。
-    # A flat mid-grey must survive both passes essentially unchanged.
+
+    # 平坦的中灰经过两趟应当几乎不变。 / A flat mid-grey must survive both passes nearly unchanged.
     flat = np.full((16, 16, 3), 0.5, np.float32)
     up = upscale(flat, 2.0)
     assert up.shape == (32, 32, 3), up.shape
     assert np.all(np.isfinite(up)), "non-finite output"
     assert np.max(np.abs(up - 0.5)) < 1e-3, f"flat tone drifted: {np.max(np.abs(up - 0.5))}"
 
-    # 硬边缘必须保持硬（EASU 不能把它糊成一段斜坡），且结果留在 [0,1] 内，
-    # 被 dering 夹取挡住，不出现振铃过冲。
-    # A hard edge must stay hard (EASU must not blur it into a ramp), and the result must
-    # stay within [0,1] with no ringing overshoot past the dering clamp.
+    # 硬边缘必须保持硬（EASU 不能把它糊成斜坡），且结果不越过 [0,1]、不被去振铃放行出振铃。
+    # A hard edge must stay hard (EASU must not blur it into a ramp), stay within [0,1],
+    # and not ring past the deringing clamp.
     edge = np.zeros((16, 16, 3), np.float32)
     edge[:, 8:] = 1.0
     up = upscale(edge, 2.0)
     assert up.min() >= -1e-6 and up.max() <= 1.0 + 1e-6, (up.min(), up.max())
     assert np.all(np.isfinite(up))
 
-    # 全黑与全白不能产生 NaN（RCAS 的退化情形）。
-    # Full black and full white must not produce NaNs (the RCAS degenerate case).
+    # 纯黑与纯白常数图必须有限。RCAS 的限幅里有 0/0：参考靠 D3D 的 NaN 容错 min/max 吸收，
+    # 这里靠 np.fmin/np.fmax；若改成普通 min/max，这两条会整图变 NaN。容差放到 0.005，
+    # 因为纯白会带着参考自身 APrxMedRcpF1 的误差（约 0.17%）回来，约合 0.4/255。
+    # Constant black and white frames must stay finite. RCAS limiting contains 0/0: the
+    # reference absorbs it with D3D's NaN-tolerant min/max, here np.fmin/np.fmax. With
+    # plain min/max both cases turn entirely NaN. The tolerance is 0.005 because pure
+    # white comes back carrying the reference's own APrxMedRcpF1 error (~0.17%, about
+    # 0.4/255).
     for v in (0.0, 1.0):
         up = upscale(np.full((8, 8, 3), v, np.float32), 2.0)
         assert np.all(np.isfinite(up)), f"NaN at constant {v}"
+        assert np.allclose(up, v, atol=5e-3), f"constant {v} drifted to {up.flat[0]}"
 
-    # 随机输入：只核对形状与有限性契约。
-    # Random input: only the shape/finiteness contract is checked.
+    # 纯黑上的一颗孤立亮点要被锐化（参考会把它抬到约 0.86）。这正是 0/0 那个位置的另一面：
+    # 若把 x/0 简单地取 0，限幅被抹平，亮点就得不到锐化。
+    # An isolated bright dot on pure black must be sharpened (the reference lifts it to
+    # about 0.86). This is the other face of that same 0/0: treating x/0 as plain 0
+    # flattens the limiter and the dot would not be sharpened at all.
+    dot = np.zeros((5, 5, 3), np.float32)
+    dot[2, 2] = 0.5
+    out = rcas(dot, 0.25)
+    assert np.isfinite(out).all()
+    assert out[2, 2, 0] > 0.7, f"dot not sharpened: {out[2, 2, 0]}"
+
+    # 随机输入：只核对形状与有限性。 / Random input: only shape and finiteness.
     noise = rng.random((24, 32, 3)).astype(np.float32)
     up = upscale(noise, 3.0)
     assert up.shape == (72, 96, 3), up.shape
@@ -369,9 +414,9 @@ def main(argv=None):
     import argparse
     ap = argparse.ArgumentParser(description="FSR1 (EASU+RCAS) image upscaler")
     ap.add_argument("input", nargs="?", help="input image (PNG)")
-    ap.add_argument("--scale", type=float, default=2.0, help="upscale factor (default 2.0)")
+    ap.add_argument("--scale", type=float, default=2.0, help="per-dimension scale factor (default 2.0)")
     ap.add_argument("--sharpness", type=float, default=0.25,
-                    help="RCAS sharpening in stops: 0 = max, larger = softer (default 0.25)")
+                    help="RCAS sharpening in stops: 0 = sharpest, larger = softer (default 0.25)")
     ap.add_argument("-o", "--output", help="output PNG")
     ap.add_argument("--selftest", action="store_true", help="run the built-in check and exit")
     args = ap.parse_args(argv)
