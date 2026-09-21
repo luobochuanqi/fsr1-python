@@ -8,3 +8,9 @@ dependencies = [
     "numpy>=2.5.3",
     "pillow>=12.3.0",
 ]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16.8",
+    "ty>=0.0.82",
+]
