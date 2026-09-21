@@ -22,7 +22,32 @@ MAX_UPLOAD = 8 * 1024 * 1024  # 8 MB
 
 
 def app(environ, start_response):
-    """WSGI 入口（Vercel Python runtime 原生支持模块级 WSGI app）。"""
+    """WSGI 入口：/ 与 /api/upscale 统一入口（tool.vercel.entrypoint 指向此处）。"""
+    if environ["PATH_INFO"] == "/api/upscale":
+        return _upscale(environ, start_response)
+    if environ["REQUEST_METHOD"] == "GET" and environ["PATH_INFO"] in ("/", "/index.html"):
+        return _index(environ, start_response)
+    start_response("404 Not Found", [("Content-Type", "text/plain")])
+    return [b"not found"]
+
+
+def _index(environ, start_response):
+    # Vercel 的 cwd 是项目根，index.html 就在根上。
+    try:
+        with open("index.html", "rb") as f:
+            page = f.read()
+    except OSError:
+        start_response("500 Internal Server Error", [("Content-Type", "text/plain")])
+        return [b"index.html missing"]
+    start_response("200 OK", [
+        ("Content-Type", "text/html; charset=utf-8"),
+        ("Content-Length", str(len(page))),
+    ])
+    return [page]
+
+
+def _upscale(environ, start_response):
+    """超分端点。"""
 
     def err(msg, code="400 Bad Request"):
         start_response(code, [("Content-Type", "text/plain; charset=utf-8")])
