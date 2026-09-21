@@ -1,0 +1,10 @@
+[project]
+name = "fsr1-python"
+version = "0.1.0"
+description = "A faithful NumPy port of AMD FidelityFX Super Resolution 1 (EASU + RCAS)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.5.3",
+    "pillow>=12.3.0",
+]
