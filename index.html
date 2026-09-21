@@ -43,18 +43,20 @@
   .upload-btn:active { transform: translateY(1px); }
   #fileInput { display: none; }
 
-  /* 舞台：占满剩余空间，图片 contain 居中。 */
+  /* 舞台：占满剩余空间，grid 居中。 */
   #stage {
-    flex: 1; min-height: 0; position: relative; background: #0a0b0c;
-    display: grid; place-items: center; user-select: none; touch-action: none;
+    flex: 1 1 auto; min-height: 0; position: relative; background: #0a0b0c;
+    display: flex; align-items: center; justify-content: center;
+    user-select: none; touch-action: none; overflow: hidden;
   }
+  /* 对比框：宽高完全由 JS fitCompare() 按输出图宽高比 contain 计算并写像素，
+     防被自然尺寸撑破，也避免 CSS 百分比高度链的塌缩问题。 */
   #compare {
-    position: relative; max-width: 100%; max-height: 100%;
-    line-height: 0; cursor: ew-resize;
+    position: relative; line-height: 0; cursor: ew-resize; flex: none;
   }
   #compare img {
-    max-width: 100vw; max-height: 100%; display: block;
-    object-fit: contain; pointer-events: none;
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    display: block; pointer-events: none;
   }
   #after { position: absolute; inset: 0; clip-path: inset(0 0 0 var(--x, 50%)); }
   #divider {
@@ -105,7 +107,7 @@
   input[type="range"] { accent-color: var(--accent); width: 120px; }
   .val { font: 12px var(--mono); color: var(--text); min-width: 42px; }
 
-  /* 画廊：左下角可折叠抽屉。 */
+  /* 画廊：可折叠抽屉。 */
   #galleryToggle {
     display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px;
     border: 1px solid var(--line); border-radius: 4px; background: transparent;
@@ -182,6 +184,7 @@
 const $ = (id) => document.getElementById(id);
 const statusEl = $("status"), statusText = $("statusText");
 const compare = $("compare"), divider = $("divider");
+const stage = $("stage");
 let busy = false, raf = 0;
 // 当前展示状态：mode = "sample"（静态图对）| "upload"（API 实时计算）。
 let mode = "sample", curSample = "genshin", curScale = "2";
@@ -198,16 +201,51 @@ function setStatus(text, live = false, error = false) {
   statusEl.classList.toggle("error", error);
 }
 
-// 载入内置示例的某一倍率图对；origin 一律为 before，超分图为 after。
+// 对比框像素定位：按输出图宽高比在舞台内 contain，滑块与图像严格对齐。
+let fitAR = null;
+function fitCompare(w, h) {
+  fitAR = w / h;
+  applyFit();
+}
+function applyFit() {
+  if (!fitAR) return;
+  const r = stage.getBoundingClientRect();
+  const pad = 16;
+  const bw = r.width - pad * 2, bh = r.height - pad * 2;
+  let cw = bw, ch = cw / fitAR;
+  if (ch > bh) { ch = bh; cw = ch * fitAR; }
+  compare.style.width = Math.round(cw) + "px";
+  compare.style.height = Math.round(ch) + "px";
+}
+new ResizeObserver(applyFit).observe(stage);
+
+function setPair(beforeUrl, afterUrl, text) {
+  const afterImg = $("afterImg");
+  afterImg.onload = () => {
+    fitCompare(afterImg.naturalWidth, afterImg.naturalHeight);
+    $("before").src = beforeUrl;
+    $("before").onload = () => {
+      setStatus(text);
+      busy = false;
+    };
+  };
+  // 图片加载失败也要解锁，否则交互被 busy 永久锁死。
+  afterImg.onerror = $("before").onerror = () => {
+    setStatus("图片加载失败", false, true);
+    busy = false;
+  };
+  afterImg.src = afterUrl;
+}
+
+// 加载内置示例的某一倍率图对；origin 一律为 before，超分图为 after。
 function showSample(sampleId, scale) {
   mode = "sample"; curSample = sampleId; curScale = scale;
-  const s = SAMPLES.find((s) => s.id === sampleId);
+  const s = SAMPLES.find((x) => x.id === sampleId);
   const scaleSeg = $("scaleSeg");
   scaleSeg.querySelectorAll("button").forEach((b) =>
     b.classList.toggle("on", b.dataset.scale === scale));
   const before = `/sample/${sampleId}/origin.jpg`;
   const after = `/sample/${sampleId}/${scale}x.jpg`;
-  // 示例对只有 2x/4x 两档；上传后锐化档才生效，示例固定 0.2。
   $("sharp").value = "0.2"; $("sharpV").textContent = "0.20";
   setPair(before, after,
     `${s.label} · 1920x1080 → ${scale === "2" ? "3840x2160" : "7680x4320"} · FSR1 ${scale}x`);
@@ -236,23 +274,6 @@ async function runUpload(scale) {
     setStatus(`失败 ${e.message}`, false, true);
     busy = false;
   }
-}
-
-function setPair(beforeUrl, afterUrl, text) {
-  const afterImg = $("afterImg");
-  afterImg.onload = () => {
-    $("before").src = beforeUrl;
-    $("before").onload = () => {
-      setStatus(text);
-      busy = false;
-    };
-  };
-  // 图片加载失败也要解锁，否则交互被 busy 永久锁死。
-  afterImg.onerror = $("before").onerror = () => {
-    setStatus("图片加载失败", false, true);
-    busy = false;
-  };
-  afterImg.src = afterUrl;
 }
 
 // 画廊按钮。
