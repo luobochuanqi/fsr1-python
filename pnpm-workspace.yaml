@@ -1,0 +1,4 @@
+packages:
+  - "fsr1"
+  - "fsr2"
+  - "packages/*"

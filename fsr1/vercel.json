@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "pnpm build",
+  "outputDirectory": "web/dist",
+  "functions": {
+    "api/upscale.py": {
+      "maxDuration": 60,
+      "excludeFiles": "{serve.py,input/**,output/**,asset/**,web/**,node_modules/**,__pycache__/**,.ruff_cache/**,*.jpg,*.png}"
+    }
+  }
+}

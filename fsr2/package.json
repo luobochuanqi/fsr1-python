@@ -1,0 +1,6 @@
+{
+  "name": "@sr/fsr2",
+  "private": true,
+  "version": "0.1.0",
+  "description": "FSR2 research unit: Godot project (Bistro scene skeleton, upscaler reproduction)"
+}

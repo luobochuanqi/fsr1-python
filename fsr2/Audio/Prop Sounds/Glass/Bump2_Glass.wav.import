@@ -1,0 +1,24 @@
+[remap]
+
+importer="wav"
+type="AudioStreamWAV"
+uid="uid://dl8eedad8kqfp"
+path="res://.godot/imported/Bump2_Glass.wav-4c2c4adcba4f83e45ece567f05ed27cb.sample"
+
+[deps]
+
+source_file="res://Audio/Prop Sounds/Glass/Bump2_Glass.wav"
+dest_files=["res://.godot/imported/Bump2_Glass.wav-4c2c4adcba4f83e45ece567f05ed27cb.sample"]
+
+[params]
+
+force/8_bit=false
+force/mono=true
+force/max_rate=false
+force/max_rate_hz=44100
+edit/trim=false
+edit/normalize=false
+edit/loop_mode=1
+edit/loop_begin=0
+edit/loop_end=-1
+compress/mode=0

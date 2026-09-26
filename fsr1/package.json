@@ -1,0 +1,20 @@
+{
+  "name": "@sr/fsr1",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "FSR1 research unit: NumPy port, web demo, upscale API",
+  "scripts": {
+    "dev": "vite web",
+    "build": "vite build web"
+  },
+  "dependencies": {
+    "@sr/ui": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "^7.0.0"
+  },
+  "engines": {
+    "node": ">=20.19"
+  }
+}

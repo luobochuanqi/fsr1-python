@@ -1,0 +1,24 @@
+[remap]
+
+importer="wav"
+type="AudioStreamWAV"
+uid="uid://bo5rkx11uyl6k"
+path="res://.godot/imported/Scrape_Metal_Heavy.wav-5299a31e5fd8c51662c8eebc5e73b64d.sample"
+
+[deps]
+
+source_file="res://Audio/Prop Sounds/Metal_Heavy/Scrape_Metal_Heavy.wav"
+dest_files=["res://.godot/imported/Scrape_Metal_Heavy.wav-5299a31e5fd8c51662c8eebc5e73b64d.sample"]
+
+[params]
+
+force/8_bit=false
+force/mono=true
+force/max_rate=false
+force/max_rate_hz=44100
+edit/trim=false
+edit/normalize=false
+edit/loop_mode=2
+edit/loop_begin=0
+edit/loop_end=-1
+compress/mode=0

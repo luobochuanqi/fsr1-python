@@ -1,0 +1,17 @@
+{
+  "name": "@sr/web-fsr1",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "FSR1 web demo: before/after comparison with live upscale API",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@sr/ui": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "^7.0.0"
+  }
+}

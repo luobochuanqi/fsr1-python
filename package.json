@@ -1,0 +1,10 @@
+{
+  "name": "super-resolution",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Super-resolution research playground: algorithms, web demos, engine integrations",
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm --filter @sr/fsr1 dev"
+  }
+}

@@ -1,0 +1,85 @@
+* { box-sizing: border-box; margin: 0; }
+html, body { height: 100%; }
+body {
+  font: 14px/1.5 var(--sans); color: var(--text); background: var(--bg);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+
+/* 顶栏：品牌 + 上传，单行 56px。 */
+header {
+  height: 56px; flex: none; display: flex; align-items: center; gap: 16px;
+  padding: 0 20px; border-bottom: 1px solid var(--line); background: var(--panel);
+}
+.brand { display: flex; align-items: baseline; gap: 10px; }
+.brand b { font-size: 15px; font-weight: 650; letter-spacing: 0.02em; }
+.brand span { font-size: 12px; color: var(--dim); }
+.upload-btn {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 14px; border: 1px solid var(--line); border-radius: 4px;
+  background: transparent; color: var(--text); font: 13px var(--sans); cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.upload-btn:hover { border-color: var(--accent-dim); color: var(--accent); }
+.upload-btn:active { transform: translateY(1px); }
+#fileInput { display: none; }
+
+/* 舞台：占满剩余空间，grid 居中。对比框由 @sr/ui 挂载。 */
+#stage {
+  flex: 1 1 auto; min-height: 0; position: relative; background: #0a0b0c;
+  display: flex; align-items: center; justify-content: center;
+  user-select: none; touch-action: none; overflow: hidden;
+}
+
+/* 状态条：单行等宽信息。 */
+#status {
+  flex: none; height: 34px; display: flex; align-items: center; gap: 10px;
+  padding: 0 20px; font: 12px var(--mono); color: var(--dim);
+  border-top: 1px solid var(--line); background: var(--panel);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#status .live { color: var(--accent); }
+#status.error { color: #e06c75; }
+
+/* 控制台：底部操作区。 */
+#console {
+  flex: none; display: flex; align-items: center; gap: 24px; flex-wrap: wrap;
+  padding: 12px 20px; border-top: 1px solid var(--line); background: var(--panel);
+}
+.group { display: flex; align-items: center; gap: 10px; }
+.group-label { font: 11px var(--mono); color: var(--dim); letter-spacing: 0.06em; }
+input[type="range"] { accent-color: var(--accent); width: 120px; }
+.val { font: 12px var(--mono); color: var(--text); min-width: 42px; }
+
+/* 画廊：可折叠抽屉。 */
+#galleryToggle {
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: 4px; background: transparent;
+  color: var(--dim); font: 13px var(--sans); cursor: pointer; transition: color 0.15s;
+}
+#galleryToggle:hover { color: var(--text); }
+#gallery {
+  position: fixed; left: 20px; bottom: 108px; z-index: 10;
+  display: none; grid-template-columns: repeat(3, 108px); gap: 8px;
+  padding: 10px; border: 1px solid var(--line); border-radius: 6px;
+  background: rgba(16, 18, 20, 0.92); backdrop-filter: blur(10px);
+  box-shadow: 0 10px 40px rgba(0,0,0,0.45);
+}
+#gallery.open { display: grid; }
+.thumb {
+  position: relative; width: 108px; height: 60px; border-radius: 4px; overflow: hidden;
+  border: 1px solid var(--line); cursor: pointer; padding: 0; background: #0a0b0c;
+  transition: border-color 0.15s;
+}
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+.thumb.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.thumb span {
+  position: absolute; left: 4px; bottom: 4px; padding: 1px 5px; border-radius: 2px;
+  background: rgba(10,11,12,0.78); font: 10px var(--mono); color: #c3cbd1;
+}
+.thumb.on span { color: var(--accent); }
+
+@media (max-width: 720px) {
+  #console { gap: 12px; }
+  .group { flex-wrap: wrap; }
+  #gallery { grid-template-columns: repeat(2, 108px); left: 12px; }
+}

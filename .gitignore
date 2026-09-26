@@ -8,3 +8,15 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Node
+node_modules/
+
+# Godot（fsr2 的导入缓存与 Bistro 大二进制资产不入库，见 fsr2/README.md）
+fsr2/.godot/
+fsr2/Meshes/
+fsr2/Textures/
+
+# 本地草稿与编辑器状态
+input/
+.vscode/

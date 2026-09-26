@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FSR1 超分对比</title>
+</head>
+<body>
+
+<header>
+  <div class="brand"><b>FSR1</b><span>EASU + RCAS · NumPy 逐位复刻 AMD 参考</span></div>
+  <button class="upload-btn" id="uploadBtn">上传图片</button>
+  <input type="file" id="fileInput" accept="image/png,image/jpeg">
+</header>
+
+<div id="stage"></div>
+
+<div id="status"><span id="statusText">载入示例中</span></div>
+
+<div id="console">
+  <button id="galleryToggle">示例</button>
+  <div class="group">
+    <span class="group-label">倍率</span>
+    <span class="val" id="scaleV">2x</span>
+  </div>
+  <div class="group">
+    <span class="group-label">锐化</span>
+    <input type="range" id="sharp" min="0" max="2" step="0.05" value="0.2">
+    <span class="val" id="sharpV">0.20</span>
+  </div>
+</div>
+
+<div id="gallery"></div>
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+[remap]
+
+importer="wav"
+type="AudioStreamWAV"
+uid="uid://bgrakbqfu283w"
+path="res://.godot/imported/Bump1_Metal_Heavy.wav-12b05b3a1b049bbada4c8275f3f0c466.sample"
+
+[deps]
+
+source_file="res://Audio/Prop Sounds/Metal_Heavy/Bump1_Metal_Heavy.wav"
+dest_files=["res://.godot/imported/Bump1_Metal_Heavy.wav-12b05b3a1b049bbada4c8275f3f0c466.sample"]
+
+[params]
+
+force/8_bit=false
+force/mono=true
+force/max_rate=false
+force/max_rate_hz=44100
+edit/trim=false
+edit/normalize=false
+edit/loop_mode=1
+edit/loop_begin=0
+edit/loop_end=-1
+compress/mode=0

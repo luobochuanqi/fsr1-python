@@ -1,0 +1,10 @@
+{
+  "name": "@sr/ui",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Shared demo UI: before/after comparison viewer with zoom and pan",
+  "exports": {
+    ".": "./src/index.js",
+    "./style.css": "./src/style.css"
+  }
+}

@@ -1,0 +1,24 @@
+[remap]
+
+importer="wav"
+type="AudioStreamWAV"
+uid="uid://cxgpf4jwjufth"
+path="res://.godot/imported/Bump2_Metal_Light.wav-47d55f6978ff3f7f850daaf7d4f31a6a.sample"
+
+[deps]
+
+source_file="res://Audio/Prop Sounds/Metal_Light/Bump2_Metal_Light.wav"
+dest_files=["res://.godot/imported/Bump2_Metal_Light.wav-47d55f6978ff3f7f850daaf7d4f31a6a.sample"]
+
+[params]
+
+force/8_bit=false
+force/mono=true
+force/max_rate=false
+force/max_rate_hz=44100
+edit/trim=false
+edit/normalize=false
+edit/loop_mode=1
+edit/loop_begin=0
+edit/loop_end=-1
+compress/mode=0

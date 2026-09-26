@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3 uid="uid://dc3t3v3my60t6"]
+
+[ext_resource type="Script" uid="uid://bqko7t4jxkgra" path="res://Scripts/PropAudioStreamer.gd" id="1_kl77c"]
+
+[node name="Prop" type="AudioStreamPlayer3D"]
+volume_db = -80.0
+script = ExtResource("1_kl77c")

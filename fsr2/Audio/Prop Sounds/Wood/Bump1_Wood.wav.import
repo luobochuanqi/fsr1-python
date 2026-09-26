@@ -1,0 +1,24 @@
+[remap]
+
+importer="wav"
+type="AudioStreamWAV"
+uid="uid://brle6bd58h4h2"
+path="res://.godot/imported/Bump1_Wood.wav-4f17a2bf4fabe0df8ca111ac3c7e250b.sample"
+
+[deps]
+
+source_file="res://Audio/Prop Sounds/Wood/Bump1_Wood.wav"
+dest_files=["res://.godot/imported/Bump1_Wood.wav-4f17a2bf4fabe0df8ca111ac3c7e250b.sample"]
+
+[params]
+
+force/8_bit=false
+force/mono=true
+force/max_rate=false
+force/max_rate_hz=44100
+edit/trim=false
+edit/normalize=false
+edit/loop_mode=1
+edit/loop_begin=0
+edit/loop_end=-1
+compress/mode=0

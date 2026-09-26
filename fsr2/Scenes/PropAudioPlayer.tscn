@@ -1,0 +1,14 @@
+[gd_scene load_steps=4 format=3 uid="uid://cb5wljw5j3qlt"]
+
+[ext_resource type="Script" uid="uid://do1mfod8xryul" path="res://Scripts/PropAudioPlayer.gd" id="1_hl2k7"]
+[ext_resource type="Script" uid="uid://b0kmcqpvkqd71" path="res://Scripts/PropAudioPlayerHelper.gd" id="2_q782f"]
+[ext_resource type="PackedScene" uid="uid://dc3t3v3my60t6" path="res://Scenes/PropStreamPlayer.tscn" id="3_5nqm1"]
+
+[node name="PropAudioPlayer" type="Node3D"]
+script = ExtResource("1_hl2k7")
+impulse_force_ceiling_for_prop_impact_play = 9.22337e+18
+helper_script = ExtResource("2_q782f")
+streamer = ExtResource("3_5nqm1")
+
+[node name="Scrape" type="AudioStreamPlayer3D" parent="."]
+volume_db = -80.0
