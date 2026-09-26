@@ -5,9 +5,9 @@
 成功返回 200 + image/png；失败返回 4xx + text/plain。
 
 部署形态：本目录（fsr1/）是自包含部署单元（Vercel 项目 Root Directory =
-fsr1）。页面静态资源（web/dist 构建产物）由 Vercel CDN 直接服务（vercel.json
-的 outputDirectory），仅 /api/upscale 路由到本函数。本地 serve.py 复用同一份
-WSGI app，并自管 dist 静态文件，所见即所得。函数以部署根为 cwd，可直接
+fsr1）。入口 WSGI app 承载全部路由：/api/upscale 之外的 GET 由 web/dist
+构建产物应答——产物既进函数包也进 Vercel 静态输出，谁先命中返回同一份文件。
+本地 serve.py 复用同一份 WSGI app，所见即所得。函数以部署根为 cwd，可直接
 import 同级的 fsr1.py（依赖见 requirements.txt）。冷启动导入 NumPy 约
 +0.5s。输入最大边 512px：NumPy 路径在该尺寸约 1.2s，时限余量充足。
 """
@@ -40,7 +40,7 @@ def app(environ, start_response):
 
 
 def _static(rel, environ, start_response):
-    """本地预览的静态文件服务（部署时该职责在 CDN）。
+    """web/dist 的静态文件服务。部署时 CDN 若命中静态输出则不经此路径。
 
     resolve 后必须仍在 DIST 内，天然免疫路径穿越。"""
     p = (DIST / rel).resolve()

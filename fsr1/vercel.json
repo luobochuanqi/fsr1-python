@@ -5,7 +5,7 @@
   "functions": {
     "api/upscale.py": {
       "maxDuration": 60,
-      "excludeFiles": "{serve.py,input/**,output/**,asset/**,web/**,node_modules/**,__pycache__/**,.ruff_cache/**,*.jpg,*.png}"
+      "excludeFiles": "{serve.py,input/**,output/**,asset/**,web/src/**,web/public/**,web/index.html,web/vite.config.js,web/package.json,node_modules/**,__pycache__/**,.ruff_cache/**}"
     }
   }
 }
